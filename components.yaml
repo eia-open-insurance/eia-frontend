@@ -1,0 +1,18 @@
+components:
+  - name: shell
+    path: shell
+    type: frontend
+    deployable: true
+    port: 3000
+  - name: runtime
+    path: packages/runtime
+    type: library
+    deployable: false
+  - name: ui-kit
+    path: packages/ui-kit
+    type: library
+    deployable: false
+  - name: federation
+    path: packages/federation
+    type: library
+    deployable: false
