@@ -34,6 +34,19 @@ Federated application shell: routing, session, remote loading, transaction monit
 
 Deployed to CDN; no business logic.
 
+## Federation paths
+
+The shell loads the ten remotes from relative `/remotes/<vertical>/remoteEntry.js`
+paths. `npm start` proxies each `/remotes/<vertical>/` prefix to the matching remote dev
+server on ports 3001-3010 (with the prefix stripped), so the local two-process workflow is
+unchanged. Docker Compose and the Kubernetes shell nginx apply the same rewrite, and the
+Kubernetes Ingress `eia-remotes` serves `remoteEntry.js` and its chunks through an nginx
+regex rewrite. Rebuild `dist/` with `npm run build` after changing `webpack.config.js`.
+
+`EIA_LIVE=1 npx playwright test tests/live-all.spec.js` runs the live federation suite
+against an already-running stack (default `http://localhost:3000`, override with
+`EIA_BASE_URL`); without `EIA_LIVE` Playwright starts the shell and Party dev servers.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
