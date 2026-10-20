@@ -33,6 +33,21 @@ test.describe('live federated verticals', () => {
     });
   }
 
+  test('direct claim diary tab is available', async ({ page }) => {
+    await page.goto('/direct-claims');
+    await expect(page.getByRole('heading', { name: 'Direct claims' })).toBeVisible({ timeout: 20000 });
+    await page.getByRole('tab', { name: 'Diary & Notes' }).click();
+    await expect(page.getByText(/diary tasks/i).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add task' }).first()).toBeVisible();
+  });
+
+  test('assumed claim diary tab is available', async ({ page }) => {
+    await page.goto('/assumed-claims');
+    await expect(page.getByRole('heading', { name: 'Assumed Claims' })).toBeVisible({ timeout: 20000 });
+    await page.getByRole('tab', { name: 'Diary & Notes' }).click();
+    await expect(page.getByText(/diary tasks/i).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add task' }).first()).toBeVisible();
+  });
   test('global search opens a party record from the live index', async ({ page }) => {
     await page.goto('/');
     const input = page.getByRole('searchbox', { name: 'Search all records' });
@@ -59,5 +74,7 @@ test.describe('live federated verticals', () => {
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
   });
 });
+
+
 
 
