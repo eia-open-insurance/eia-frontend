@@ -4,7 +4,7 @@ const routes = [
   ['party', 'Party'],
   ['policy', 'Policy'],
   ['contract', 'Contract'],
-  ['direct-claims', 'Direct Claims'],
+  ['direct-claims', 'Direct claims'],
   ['assumed-claims', 'Assumed Claims'],
   ['cession', 'Cession'],
   ['retrocession', 'Retrocession'],
@@ -23,4 +23,5 @@ test.describe('live federated verticals', () => {
     });
   }
 });
+
 
