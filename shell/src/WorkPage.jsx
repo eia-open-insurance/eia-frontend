@@ -23,6 +23,13 @@ function money(value, currency) {
   }
 }
 
+function ageDays(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
+}
+
 function normalize(claim, source) {
   return {
     id: claim.id,
@@ -34,6 +41,7 @@ function normalize(claim, source) {
     owner: claim.assignedAdjuster || '',
     team: claim.assignedTeam || '',
     lossDate: claim.lossDate || claim.reportedDate || '',
+    ageDays: ageDays(claim.lossDate || claim.reportedDate),
     reserve: claim.currentReserveAmount ?? claim.reserveAmount ?? null,
     currency: claim.reserveCurrency || 'USD',
     href: `/${source.path}?record=${claim.id}`
@@ -79,6 +87,20 @@ export default function WorkPage({ navigate }) {
   const mine = open.filter((row) => row.owner.toLowerCase() === ME.toLowerCase());
   const unassigned = open.filter((row) => !row.owner);
   const assigned = open.filter((row) => row.owner);
+  const aged = open.filter((row) => row.ageDays != null && row.ageDays > 30);
+  const teamRows = useMemo(() => {
+    const map = new Map();
+    open.forEach((row) => {
+      const key = row.team || 'UNASSIGNED';
+      const current = map.get(key) || { team: key, total: 0, unassigned: 0, aged: 0, oldest: 0 };
+      current.total += 1;
+      if (!row.owner) current.unassigned += 1;
+      if (row.ageDays != null && row.ageDays > 30) current.aged += 1;
+      current.oldest = Math.max(current.oldest, row.ageDays || 0);
+      map.set(key, current);
+    });
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [open]);
   const visible = useMemo(() => {
     const base = view === 'MINE' ? mine : view === 'UNASSIGNED' ? unassigned : assigned;
     const q = term.trim().toLowerCase();
@@ -111,7 +133,7 @@ export default function WorkPage({ navigate }) {
           <h3>Team queue</h3><div className="eia-metric">{assigned.length}</div><div className="eia-metric-label">open claims with an owner</div>
         </button>
         <div className="eia-card eia-metric-card">
-          <h3>Direct / assumed</h3><div className="eia-metric">{mine.filter((r) => r.book === 'DIRECT').length} / {mine.filter((r) => r.book === 'ASSUMED').length}</div><div className="eia-metric-label">my open claims by book</div>
+          <h3>Aged 30+ days</h3><div className="eia-metric">{aged.length}</div><div className="eia-metric-label">open claims past the first service threshold</div>
         </div>
       </div>
 
@@ -165,9 +187,34 @@ export default function WorkPage({ navigate }) {
         )}
       </div>
 
+      <div className="eia-section-title">
+        <h2>Team workload</h2>
+        <span className="eia-muted" style={{ fontSize: 11 }}>{aged.length} open claims over 30 days</span>
+      </div>
+      <div className="eia-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {teamRows.length === 0 ? (
+          <div className="eia-empty">No team workload in this view.</div>
+        ) : (
+          <table>
+            <thead><tr><th>Team</th><th>Open claims</th><th>Unassigned</th><th>Aged 30+</th><th>Oldest claim</th></tr></thead>
+            <tbody>
+              {teamRows.map((row) => (
+                <tr key={row.team}>
+                  <td>{row.team}</td>
+                  <td>{row.total}</td>
+                  <td>{row.unassigned}</td>
+                  <td>{row.aged}</td>
+                  <td>{row.oldest ? `${row.oldest} days` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       <div className="eia-context-panel">
         <h4>How this queue works</h4>
-        <p>Ownership determines who carries a claim, but it does not change coverage, reserves, settlements, or payments. Use the claim’s Assign action to move work between adjusters and teams. Closed and denied claims are hidden unless you include them.</p>
+        <p>Ownership determines who carries a claim, but it does not change coverage, reserves, settlements, or payments. Use the claim’s Assign action to move work between adjusters and teams. Closed and denied claims are hidden unless you include them. Aging is measured from the loss date, so it highlights service risk rather than financial materiality.</p>
       </div>
     </div>
   );

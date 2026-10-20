@@ -984,3 +984,11 @@ main [role="status"] {
   vertical-align: middle;
 }
 .eia-content tbody tr:hover td { background: #f8fafc; }
+
+/* Search match highlight */
+.eia-search-hit {
+  background: #fff0b8;
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}

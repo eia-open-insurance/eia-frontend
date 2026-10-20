@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Highlight from './Highlight.jsx';
 import {
   CREATE_ACTIONS,
   SAVED_KEY,
@@ -239,9 +240,9 @@ export default function SearchPage({ navigate }) {
                 <button key={`${item.verticalPath}-${item.id || item.href}`} type="button" className="eia-search-row" onClick={() => navigate(cleanHref(item.href))}>
                   <span className="record">
                     <span className="eia-search-type">{item.type}</span>
-                    <b>{item.label}</b>
+                    <b><Highlight text={item.label} term={submitted} /></b>
                   </span>
-                  <span className="context">{item.secondary}</span>
+                  <span className="context"><Highlight text={item.secondary} term={submitted} /></span>
                   <span><span className={`eia-pill ${item.status === 'CLOSED' || item.status === 'ACTIVE' ? 'green' : 'blue'}`}>{item.status}</span></span>
                   <span className="open">Open →</span>
                 </button>

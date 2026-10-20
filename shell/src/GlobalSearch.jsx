@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import Highlight from './Highlight.jsx';
 import {
   CREATE_ACTIONS,
   RECENT_KEY,
@@ -149,7 +150,7 @@ export default function GlobalSearch({ navigate }) {
                   {recent.map((item) => (
                     <button key={item.href} type="button" className="eia-search-result" onClick={() => choose(item)}>
                       <span className="eia-search-type">{item.type || 'RECORD'}</span>
-                      <span className="eia-search-main"><b>{item.label}</b><small>{item.secondary}</small></span>
+                      <span className="eia-search-main"><b><Highlight text={item.label} term={query} /></b><small><Highlight text={item.secondary} term={query} /></small></span>
                     </button>
                   ))}
                 </>
@@ -193,7 +194,7 @@ export default function GlobalSearch({ navigate }) {
                     onClick={() => choose(item)}
                   >
                     <span className="eia-search-type">{item.type}</span>
-                    <span className="eia-search-main"><b>{item.label}</b><small>{item.secondary}</small></span>
+                    <span className="eia-search-main"><b><Highlight text={item.label} term={query} /></b><small><Highlight text={item.secondary} term={query} /></small></span>
                     <span className="eia-search-status">{item.status}</span>
                   </button>
                 );
