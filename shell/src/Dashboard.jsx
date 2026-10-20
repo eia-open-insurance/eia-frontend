@@ -43,6 +43,8 @@ export default function Dashboard({ navigate }) {
   const [data, setData] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -74,9 +76,10 @@ export default function Dashboard({ navigate }) {
         notifications: items(value(9))
       });
       setLoading(false);
+      setLastUpdated(new Date());
     });
     return () => { alive = false; };
-  }, []);
+  }, [reloadKey]);
 
   const openDirect = data.claims.filter(isOpenClaim).length;
   const openAssumed = data.assumed.filter(isOpenClaim).length;
@@ -92,7 +95,10 @@ export default function Dashboard({ navigate }) {
           <h1>Claims operations</h1>
           <p>Direct and assumed books, policy and contract administration, payments, and reinsurance hand-off.</p>
         </div>
-        <span className={`eia-pill ${failed ? 'amber' : 'green'}`}>{failed ? `${failed} service${failed === 1 ? '' : 's'} unavailable` : 'All services connected'}</span>
+        <div className="eia-actions">
+          <span className={`eia-pill ${failed ? 'amber' : 'green'}`}>{failed ? `${failed} service${failed === 1 ? '' : 's'} unavailable` : 'All services connected'}</span>
+          <button type="button" className="eia-btn-secondary" onClick={() => setReloadKey((v) => v + 1)} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+        </div>
       </div>
 
       <div className="eia-grid eia-grid-4">
@@ -203,7 +209,7 @@ export default function Dashboard({ navigate }) {
         )}
       </div>
 
-      {loading && <p className="eia-muted" role="status">Loading operational data…</p>}
+      {lastUpdated && <p className="eia-muted" style={{ fontSize: 11, marginTop: 16 }} role="status">Last refreshed {lastUpdated.toLocaleTimeString()}</p>}
     </div>
   );
 }
