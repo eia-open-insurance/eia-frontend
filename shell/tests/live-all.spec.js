@@ -48,6 +48,13 @@ test.describe('live federated verticals', () => {
     await expect(page.getByText(/diary tasks/i).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add task' }).first()).toBeVisible();
   });
+  test('work queue loads across both books', async ({ page }) => {
+    await page.goto('/work');
+    await expect(page.getByRole('heading', { name: 'Work queue' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'My work' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Unassigned' }).first()).toBeVisible();
+    await expect(page.getByText('How this queue works')).toBeVisible();
+  });
   test('global search opens a party record from the live index', async ({ page }) => {
     await page.goto('/');
     const input = page.getByRole('searchbox', { name: 'Search all records' });
@@ -74,6 +81,7 @@ test.describe('live federated verticals', () => {
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
   });
 });
+
 
 
 

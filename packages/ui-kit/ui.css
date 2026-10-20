@@ -963,3 +963,24 @@ main [role="status"] {
 }
 .eia-work-link { color: var(--eia-blue); font-size: 11px; font-weight: 700; text-decoration: none; }
 .eia-work-link:hover { text-decoration: underline; }
+
+/* Shell-owned data tables (dashboard, work queue, search) */
+.eia-content table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.eia-content th {
+  background: var(--eia-soft);
+  color: var(--eia-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--eia-line);
+  white-space: nowrap;
+}
+.eia-content td {
+  padding: 9px 12px;
+  border-top: 1px solid #edf1f5;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.eia-content tbody tr:hover td { background: #f8fafc; }
