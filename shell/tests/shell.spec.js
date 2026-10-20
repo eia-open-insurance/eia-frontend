@@ -1,5 +1,78 @@
 import { test, expect } from '@playwright/test';
 
+function localIsoOffset(days) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function receivablesFixture() {
+  return {
+    limit: 200,
+    totalAmount: '23900.0000',
+    overdueAmount: '15500.0000',
+    count: 3,
+    items: [
+      {
+        installmentId: 'installment-1',
+        policyId: 'policy-1',
+        policyNumber: 'POL-2026-0000001',
+        insurerName: 'Acme Insurance',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(-12),
+        amount: '12500.0000',
+        currency: 'USD',
+        status: 'DUE'
+      },
+      {
+        installmentId: 'installment-2',
+        policyId: 'policy-2',
+        policyNumber: 'POL-2026-0000002',
+        insurerName: 'Northwind Mutual',
+        installmentNumber: 2,
+        dueDate: localIsoOffset(9),
+        amount: '8400.0000',
+        currency: 'USD',
+        status: 'DUE'
+      },
+      {
+        installmentId: 'installment-3',
+        policyId: 'policy-3',
+        policyNumber: 'POL-2026-0000003',
+        insurerName: 'Sentinel Specialty',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(30),
+        amount: '3000.0000',
+        currency: 'USD',
+        status: 'OVERDUE'
+      },
+      {
+        installmentId: 'installment-4',
+        policyId: 'policy-1',
+        policyNumber: 'POL-2026-0000001',
+        insurerName: 'Acme Insurance',
+        installmentNumber: 2,
+        dueDate: localIsoOffset(-40),
+        amount: '12500.0000',
+        currency: 'USD',
+        status: 'PAID'
+      }
+    ]
+  };
+}
+
+async function mockReceivables(page, payload = receivablesFixture()) {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/billing/installments**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(payload)
+  }));
+}
+
 test('shell loads the Party remote', async ({ page }) => {
   await page.route('**/api/v1/parties', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: '1', partyNumber: 'PTY-000000001', displayName: 'Acme Manufacturing', partyType: 'ORGANIZATION', status: 'ACTIVE' }]) }));
   await page.goto('/party');
@@ -191,4 +264,139 @@ test('work queue separates my work from unassigned claims', async ({ page }) => 
   await expect(page.getByText('RNS-2026-0000001', { exact: true })).toBeVisible();
 });
 
+test('premium receivables route renders summary, tabs, and open installments', async ({ page }) => {
+  await mockReceivables(page);
+  const billingRequest = page.waitForRequest((request) => request.url().includes('/api/v1/billing/installments'));
+  await page.goto('/receivables');
+  expect((await billingRequest).headers()['x-eia-tenant']).toBe('11111111-1111-7111-8111-111111111111');
 
+  await expect(page.getByRole('heading', { name: 'Premium receivables' })).toBeVisible();
+  await expect(page.getByText('Cross-policy premium collection across every open installment in the direct book.')).toBeVisible();
+
+  const overdueCard = page.getByRole('button', { name: 'Overdue premium', exact: true });
+  await expect(overdueCard).toContainText('$15,500.00');
+  await expect(overdueCard).toContainText('2 installments past due');
+  const dueCard = page.getByRole('button', { name: 'Due premium', exact: true });
+  await expect(dueCard).toContainText('$8,400.00');
+  await expect(dueCard).toContainText('1 installment not yet past due');
+  await expect(page.getByText('policies with open installments')).toBeVisible();
+
+  await expect(page.getByRole('button', { name: /^All 3$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Overdue 2$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Due 1$/ })).toBeVisible();
+
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000002' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000003' })).toBeVisible();
+  await expect(table.getByText('Acme Insurance')).toBeVisible();
+  await expect(table.getByText('PAID')).toHaveCount(0);
+  const overdueRow = table.getByRole('row', { name: /POL-2026-0000001/ });
+  await expect(overdueRow).toContainText('$12,500.00');
+  await expect(overdueRow).toContainText('USD');
+  await expect(overdueRow.getByRole('cell', { name: '12', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open policy' })).toHaveCount(3);
+
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  await expect(nav.getByText('Premium receivables')).toHaveCount(0);
+});
+
+test('premium receivables uses the billing summary when present', async ({ page }) => {
+  const payload = receivablesFixture();
+  payload.totalAmount = '25400.0000';
+  payload.overdueAmount = '17000.0000';
+  await mockReceivables(page, payload);
+  await page.goto('/receivables');
+
+  await expect(page.getByRole('button', { name: 'Overdue premium', exact: true })).toContainText('$17,000.00');
+  await expect(page.getByRole('button', { name: 'Due premium', exact: true })).toContainText('$8,400.00');
+});
+
+test('premium receivables tabs and filters narrow the collection queue', async ({ page }) => {
+  await mockReceivables(page);
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+
+  await page.getByRole('button', { name: /^Overdue 2$/ }).click();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000003' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000002' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /^Due 1$/ }).click();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000002' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /^All 3$/ }).click();
+  const filter = page.getByRole('searchbox', { name: 'Filter premium receivables' });
+
+  await filter.fill('Northwind');
+  await expect(table.getByRole('link', { name: 'POL-2026-0000002' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toHaveCount(0);
+
+  await filter.fill('12500');
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000002' })).toHaveCount(0);
+
+  await filter.fill('POL-2026-0000003');
+  await expect(table.getByRole('link', { name: 'POL-2026-0000003' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toHaveCount(0);
+
+  await filter.fill('no-such-policy');
+  await expect(page.getByText(/No open installments match/)).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toBeVisible();
+});
+
+test('premium receivables opens the policy record', async ({ page }) => {
+  await mockReceivables(page);
+  await page.goto('/receivables');
+  await page
+    .getByRole('table', { name: 'Premium receivables installments' })
+    .getByRole('link', { name: 'POL-2026-0000001' })
+    .click();
+  await expect(page).toHaveURL(/\/policy\?record=policy-1$/);
+
+  await page.goto('/receivables');
+  await page.getByRole('button', { name: 'Open policy' }).first().click();
+  await expect(page).toHaveURL(/\/policy\?record=policy-1$/);
+});
+
+test('dashboard premium receivables card links to the workspace', async ({ page }) => {
+  await mockReceivables(page);
+  await page.goto('/');
+
+  const card = page.getByRole('button', { name: 'Premium receivables' });
+  await expect(card).toBeVisible();
+  await expect(card.locator('.eia-metric').first()).toHaveText('2');
+  await expect(card.locator('.eia-receivables-amount')).toHaveText('$15,500.00');
+  await expect(card).toContainText('3 policies in queue');
+
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  await expect(nav.getByText('Premium receivables')).toHaveCount(0);
+
+  await card.click();
+  await expect(page).toHaveURL(/\/receivables$/);
+  await expect(page.getByRole('heading', { name: 'Premium receivables' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Overdue premium', exact: true })).toContainText('$15,500.00');
+});
+
+test('premium receivables shows an empty state when nothing is open', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/billing/installments**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [] })
+  }));
+  await page.goto('/receivables');
+  await expect(page.getByText('No open premium receivables. Every loaded installment is paid, waived, or cancelled.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Overdue premium' })).toContainText('$0.00');
+});
+
+test('premium receivables reports a billing service failure with retry', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/billing/installments**', (route) => route.abort());
+  await page.goto('/receivables');
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('Premium receivables unavailable.');
+  await expect(alert.getByRole('button', { name: 'Retry' })).toBeVisible();
+});

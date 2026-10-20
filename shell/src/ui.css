@@ -964,6 +964,34 @@ main [role="status"] {
 .eia-work-link { color: var(--eia-blue); font-size: 11px; font-weight: 700; text-decoration: none; }
 .eia-work-link:hover { text-decoration: underline; }
 
+/* Premium receivables */
+.eia-tab-count { margin-left: 4px; font-size: 10px; font-weight: 700; color: #7b8fa2; }
+.eia-tabs button.active .eia-tab-count { color: var(--eia-blue); }
+
+.eia-receivables-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  margin-top: 14px;
+  text-align: left;
+  border-top-color: var(--eia-amber) !important;
+  cursor: pointer;
+}
+.eia-receivables-card:hover {
+  border-color: var(--eia-blue);
+  box-shadow: 0 2px 10px rgba(16,42,67,.10);
+}
+.eia-receivables-card .eia-metric { margin: 2px 0; }
+.eia-receivables-card .eia-receivables-amount { font-size: 22px; }
+.eia-receivables-card .eia-work-link { white-space: nowrap; }
+
+@media (max-width: 700px) {
+  .eia-receivables-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .eia-receivables-card > div:last-of-type { text-align: left !important; }
+}
+
 /* Shell-owned data tables (dashboard, work queue, search) */
 .eia-content table { width: 100%; border-collapse: separate; border-spacing: 0; }
 .eia-content th {

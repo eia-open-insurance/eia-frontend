@@ -55,6 +55,15 @@ reads `/api/v1/events/stats` for processed totals and recent event types, and
 the dashboard's `Promise.allSettled` load, so an unavailable event-ingest service marks the
 card `Unavailable` without affecting the rest of the page.
 
+## Premium receivables
+
+`/receivables` is a hidden shell route (not in the primary navigation) that renders the cross-policy
+premium collection queue. It reads `/api/v1/billing/installments?limit=200` with `X-EIA-Tenant` and
+`X-EIA-Book: DIRECT`, keeps only open installments, and derives overdue status from the installment
+status and due date. A server `summary` supplies the card amounts/counts when present; otherwise the
+values are calculated from the rows. The dashboard links to the workspace from its “Premium
+receivables” card, which shows the overdue count and amount.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

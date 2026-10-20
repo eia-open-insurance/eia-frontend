@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import './ui.css';
 import Dashboard from './Dashboard.jsx';
 import GlobalSearch from './GlobalSearch.jsx';
+import ReceivablesPage from './ReceivablesPage.jsx';
 import SearchPage from './SearchPage.jsx';
 import WorkPage from './WorkPage.jsx';
 
@@ -9,6 +10,7 @@ const remotes = [
   { path: 'dashboard', label: 'Dashboard', component: Dashboard },
   { path: 'search', label: 'Search', component: SearchPage, hidden: true },
   { path: 'work', label: 'Work', component: WorkPage, hidden: true },
+  { path: 'receivables', label: 'Premium receivables', component: ReceivablesPage, hidden: true },
   { path: 'direct-claims', label: 'Direct Claims', component: React.lazy(() => import('eia_direct_claims/App')) },
   { path: 'assumed-claims', label: 'Assumed Claims', component: React.lazy(() => import('eia_assumed_claims/App')) },
   { path: 'policy', label: 'Policy', component: React.lazy(() => import('eia_policy/App')) },
@@ -93,7 +95,8 @@ export default function App() {
           {active.path === 'dashboard' && <Dashboard navigate={navigate} />}
           {active.path === 'search' && <SearchPage navigate={navigate} />}
           {active.path === 'work' && <WorkPage navigate={navigate} />}
-          {active.path !== 'dashboard' && active.path !== 'search' && active.path !== 'work' && <Active key={routeKey} />}
+          {active.path === 'receivables' && <ReceivablesPage navigate={navigate} />}
+          {active.path !== 'dashboard' && active.path !== 'search' && active.path !== 'work' && active.path !== 'receivables' && <Active key={routeKey} />}
         </Suspense>
       </section>
     </div>

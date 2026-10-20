@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { formatMoney, summarizeReceivables } from './receivables.js';
 
 const TENANT = '11111111-1111-7111-8111-111111111111';
 
@@ -61,13 +62,14 @@ function timeLabel(value) {
 
 const empty = {
   parties: [], policies: { items: [], total: 0 }, contracts: [], claims: [], assumed: [],
-  cessions: [], retros: [], documents: [], payments: [], notifications: []
+  cessions: [], retros: [], documents: [], payments: [], notifications: [], receivables: null
 };
 
 export default function Dashboard({ navigate }) {
   const [data, setData] = useState(empty);
   const [events, setEvents] = useState({ stats: normalizeStats(null), recent: [] });
   const [eventsOnline, setEventsOnline] = useState(true);
+  const [receivablesOnline, setReceivablesOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
@@ -87,12 +89,14 @@ export default function Dashboard({ navigate }) {
       get('/api/v1/payments'),
       get('/api/v1/notifications'),
       get('/api/v1/events/stats'),
-      get('/api/v1/events/recent?limit=8')
+      get('/api/v1/events/recent?limit=8'),
+      get('/api/v1/billing/installments?limit=200')
     ]).then((results) => {
       if (!alive) return;
       const value = (index) => results[index].status === 'fulfilled' ? results[index].value : null;
       setFailed(results.slice(0, 10).filter((r) => r.status === 'rejected').length);
       setEventsOnline(results[10].status === 'fulfilled' && results[11].status === 'fulfilled');
+      setReceivablesOnline(results[12].status === 'fulfilled');
       setEvents({
         stats: normalizeStats(value(10)),
         recent: items(value(11))
@@ -107,7 +111,8 @@ export default function Dashboard({ navigate }) {
         retros: items(value(6)),
         documents: items(value(7)),
         payments: items(value(8)),
-        notifications: items(value(9))
+        notifications: items(value(9)),
+        receivables: value(12)
       });
       setLoading(false);
       setLastUpdated(new Date());
@@ -127,6 +132,7 @@ export default function Dashboard({ navigate }) {
   const eventTypes = recentEventTypes(events.stats, events.recent);
   const processedEvents = events.stats.processedEvents ?? 0;
   const totalEvents = events.stats.totalEvents ?? 0;
+  const receivables = useMemo(() => summarizeReceivables(data.receivables), [data.receivables]);
 
   return (
     <div>
@@ -163,6 +169,30 @@ export default function Dashboard({ navigate }) {
           <div className="eia-metric-label">queued or unsent</div>
         </button>
       </div>
+
+      <button
+        type="button"
+        className="eia-card eia-metric-card eia-receivables-card"
+        onClick={() => navigate('receivables')}
+        aria-label="Premium receivables"
+      >
+        <div>
+          <h3>Premium receivables</h3>
+          <div className="eia-metric">{receivablesOnline ? receivables.overdueCount : '—'}</div>
+          <div className="eia-metric-label">overdue installments</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="eia-metric eia-receivables-amount">
+            {receivablesOnline ? formatMoney(receivables.overdueAmount, receivables.currency) : '—'}
+          </div>
+          <div className="eia-metric-label">
+            {receivablesOnline
+              ? `overdue premium · ${receivables.policyCount} polic${receivables.policyCount === 1 ? 'y' : 'ies'} in queue`
+              : 'Billing service unavailable'}
+          </div>
+        </div>
+        <span className="eia-work-link">Open receivables →</span>
+      </button>
 
       <div className="eia-grid eia-grid-3" style={{ marginTop: 14 }}>
         <section className="eia-card">
