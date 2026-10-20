@@ -47,6 +47,14 @@ regex rewrite. Rebuild `dist/` with `npm run build` after changing `webpack.conf
 against an already-running stack (default `http://localhost:3000`, override with
 `EIA_BASE_URL`); without `EIA_LIVE` Playwright starts the shell and Party dev servers.
 
+## Operations dashboard
+
+The default dashboard route renders the platform metrics and an “Event stream” card. The card
+reads `/api/v1/events/stats` for processed totals and recent event types, and
+`/api/v1/events/recent?limit=8` for the latest outbox deliveries. Both requests participate in
+the dashboard's `Promise.allSettled` load, so an unavailable event-ingest service marks the
+card `Unavailable` without affecting the rest of the page.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -16,6 +16,16 @@ const routes = [
 test.describe('live federated verticals', () => {
   test.skip(!process.env.EIA_LIVE, 'Set EIA_LIVE=1 with the full local stack running.');
 
+  test('dashboard loads the live event stream', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible();
+    const card = page.locator('section[aria-labelledby="event-stream-title"]');
+    await expect(card).toBeVisible();
+    await expect(card.getByText('events processed')).toBeVisible();
+    await expect(card.getByText('Live', { exact: true })).toBeVisible();
+    await expect(card.getByText('party.party.created').first()).toBeVisible();
+  });
+
   for (const [path, heading] of routes) {
     test(`${heading} remote loads through the shell`, async ({ page }) => {
       await page.goto(`/${path}`);

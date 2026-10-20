@@ -16,11 +16,6 @@ function items(payload) {
   return [];
 }
 
-function total(payload) {
-  if (payload && typeof payload.total === 'number') return payload.total;
-  return items(payload).length;
-}
-
 function isOpenClaim(claim) {
   return !['CLOSED', 'DENIED', 'COMMUTED', 'CANCELLED'].includes(claim.status);
 }
@@ -34,6 +29,36 @@ function money(value, currency) {
   }
 }
 
+function normalizeStats(payload) {
+  if (!payload || Array.isArray(payload) || typeof payload.totalEvents !== 'number') {
+    return { totalEvents: 0, processedEvents: 0, receivedEvents: 0, failedEvents: 0, recentEventTypes: [], lastReceivedAt: null };
+  }
+  return payload;
+}
+
+function recentEventTypes(stats, recent) {
+  if (stats && Array.isArray(stats.recentEventTypes) && stats.recentEventTypes.length > 0) {
+    return stats.recentEventTypes.slice(0, 5);
+  }
+  const counts = new Map();
+  for (const event of recent) {
+    const type = event && event.eventType;
+    if (!type) continue;
+    const current = counts.get(type) || { eventType: type, count: 0, lastSeenAt: null };
+    current.count += 1;
+    if (event.receivedAt && (!current.lastSeenAt || event.receivedAt > current.lastSeenAt)) current.lastSeenAt = event.receivedAt;
+    counts.set(type, current);
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+}
+
+function timeLabel(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString();
+}
+
 const empty = {
   parties: [], policies: { items: [], total: 0 }, contracts: [], claims: [], assumed: [],
   cessions: [], retros: [], documents: [], payments: [], notifications: []
@@ -41,6 +66,8 @@ const empty = {
 
 export default function Dashboard({ navigate }) {
   const [data, setData] = useState(empty);
+  const [events, setEvents] = useState({ stats: normalizeStats(null), recent: [] });
+  const [eventsOnline, setEventsOnline] = useState(true);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
@@ -58,11 +85,18 @@ export default function Dashboard({ navigate }) {
       get('/api/v1/retrocessions', 'ASSUMED'),
       get('/api/v1/documents'),
       get('/api/v1/payments'),
-      get('/api/v1/notifications')
+      get('/api/v1/notifications'),
+      get('/api/v1/events/stats'),
+      get('/api/v1/events/recent?limit=8')
     ]).then((results) => {
       if (!alive) return;
       const value = (index) => results[index].status === 'fulfilled' ? results[index].value : null;
-      setFailed(results.filter((r) => r.status === 'rejected').length);
+      setFailed(results.slice(0, 10).filter((r) => r.status === 'rejected').length);
+      setEventsOnline(results[10].status === 'fulfilled' && results[11].status === 'fulfilled');
+      setEvents({
+        stats: normalizeStats(value(10)),
+        recent: items(value(11))
+      });
       setData({
         parties: items(value(0)),
         policies: value(1) || { items: [], total: 0 },
@@ -87,6 +121,9 @@ export default function Dashboard({ navigate }) {
   const pendingNotifications = data.notifications.filter((n) => ['CREATED', 'QUEUED'].includes(n.status)).length;
   const ceded = data.cessions.filter((c) => c.status !== 'CONFIRMED' && c.status !== 'CANCELLED').length;
   const retro = data.retros.filter((c) => c.status !== 'CONFIRMED' && c.status !== 'CANCELLED').length;
+  const eventTypes = recentEventTypes(events.stats, events.recent);
+  const processedEvents = events.stats.processedEvents ?? 0;
+  const totalEvents = events.stats.totalEvents ?? 0;
 
   return (
     <div>
@@ -158,6 +195,69 @@ export default function Dashboard({ navigate }) {
           </div>
         </section>
       </div>
+
+      <section className="eia-card" style={{ marginTop: 14 }} aria-labelledby="event-stream-title">
+        <div className="eia-record-title">
+          <div>
+            <h3 id="event-stream-title" style={{ marginBottom: 2 }}>Event stream</h3>
+            <p className="eia-muted" style={{ fontSize: 12, margin: 0 }}>Transactional-outbox deliveries received by event ingest.</p>
+          </div>
+          <span className={`eia-pill ${eventsOnline ? 'green' : 'amber'}`}>{eventsOnline ? 'Live' : 'Unavailable'}</span>
+        </div>
+
+        <div className="eia-grid eia-grid-3" style={{ marginTop: 10 }}>
+          <div>
+            <div className="eia-metric">{processedEvents}</div>
+            <div className="eia-metric-label">events processed</div>
+          </div>
+          <div>
+            <div className="eia-metric">{totalEvents}</div>
+            <div className="eia-metric-label">total in inbox</div>
+          </div>
+          <div>
+            <div className="eia-metric" style={{ fontSize: 18 }}>{timeLabel(events.stats.lastReceivedAt)}</div>
+            <div className="eia-metric-label">last delivery</div>
+          </div>
+        </div>
+
+        <div className="eia-divider" />
+
+        <div className="eia-grid eia-grid-2">
+          <div>
+            <div className="eia-metric-label" style={{ marginBottom: 6 }}>Recent event types</div>
+            {eventTypes.length === 0 ? (
+              <div className="eia-empty">{eventsOnline ? 'No events recorded yet.' : 'Event stream unavailable; the rest of the dashboard is unaffected.'}</div>
+            ) : (
+              <ul className="eia-list">
+                {eventTypes.map((entry) => (
+                  <li key={entry.eventType}>
+                    <span className="eia-mono">{entry.eventType}</span>
+                    <span className="eia-pill blue">{entry.count}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="eia-metric-label" style={{ marginBottom: 6 }}>Latest deliveries</div>
+            {events.recent.length === 0 ? (
+              <div className="eia-empty">{eventsOnline ? 'Awaiting the next outbox dispatch.' : 'No recent deliveries available.'}</div>
+            ) : (
+              <ul className="eia-list">
+                {events.recent.slice(0, 5).map((event) => (
+                  <li key={event.eventId}>
+                    <span>
+                      <span className="eia-mono">{event.eventType}</span>
+                      <span className="eia-muted" style={{ display: 'block', fontSize: 11 }}>{event.aggregateType} · {timeLabel(event.receivedAt)}</span>
+                    </span>
+                    <span className={`eia-pill ${event.status === 'PROCESSED' ? 'green' : 'amber'}`}>{event.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
 
       <div className="eia-section-title">
         <h2>Direct claim queue</h2>
