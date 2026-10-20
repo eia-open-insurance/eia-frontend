@@ -955,3 +955,11 @@ main [role="status"] {
   .eia-search-row .context { grid-column: 1 / -1; white-space: normal; }
   .eia-search-row .open { display: none; }
 }
+
+/* Work queue */
+.eia-metric-card.selected {
+  border-color: var(--eia-blue) !important;
+  box-shadow: 0 0 0 2px rgba(31,95,153,.14) !important;
+}
+.eia-work-link { color: var(--eia-blue); font-size: 11px; font-weight: 700; text-decoration: none; }
+.eia-work-link:hover { text-decoration: underline; }

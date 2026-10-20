@@ -170,3 +170,24 @@ test('search enriches an insured party with its policies', async ({ page }) => {
   await expect(page.getByText('CGL · IN_FORCE')).toBeVisible();
 });
 
+
+test('work queue separates my work from unassigned claims', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/claims', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 'c1', claimNumber: 'CLM-2026-0000001', status: 'OPEN', assignedAdjuster: 'A. Adjuster', assignedTeam: 'DIRECT_CLAIMS', lossDate: '2026-09-01', currentReserveAmount: '7500.50', reserveCurrency: 'USD' }])
+  }));
+  await page.route('**/api/v1/assumed-claims', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 'a1', assumedClaimNumber: 'RNS-2026-0000001', status: 'NOTIFIED', assignedAdjuster: '', lossDate: '2026-08-01', reserveAmount: '2000', reserveCurrency: 'USD' }])
+  }));
+  await page.goto('/work');
+  await expect(page.getByRole('heading', { name: 'Work queue' })).toBeVisible();
+  await expect(page.getByText('CLM-2026-0000001', { exact: true })).toBeVisible();
+  await expect(page.getByText('My work').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Unassigned' }).first().click();
+  await expect(page.getByText('RNS-2026-0000001', { exact: true })).toBeVisible();
+});
+

@@ -116,6 +116,9 @@ export default function Dashboard({ navigate }) {
   }, [reloadKey]);
 
   const openDirect = data.claims.filter(isOpenClaim).length;
+  const mineDirect = data.claims.filter((c) => isOpenClaim(c) && String(c.assignedAdjuster || '').toLowerCase() === 'a. adjuster').length;
+  const mineAssumed = data.assumed.filter((c) => isOpenClaim(c) && String(c.assignedAdjuster || '').toLowerCase() === 'a. adjuster').length;
+  const unassigned = data.claims.filter((c) => isOpenClaim(c) && !c.assignedAdjuster).length + data.assumed.filter((c) => isOpenClaim(c) && !c.assignedAdjuster).length;
   const openAssumed = data.assumed.filter(isOpenClaim).length;
   const openPayments = data.payments.filter((p) => !['SUBMITTED', 'PAID', 'VOID', 'CANCELLED'].includes(p.status)).length;
   const pendingNotifications = data.notifications.filter((n) => ['CREATED', 'QUEUED'].includes(n.status)).length;
@@ -313,3 +316,5 @@ export default function Dashboard({ navigate }) {
     </div>
   );
 }
+
+
