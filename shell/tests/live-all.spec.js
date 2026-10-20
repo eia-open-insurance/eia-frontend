@@ -23,7 +23,7 @@ test.describe('live federated verticals', () => {
     await expect(card).toBeVisible();
     await expect(card.getByText('events processed')).toBeVisible();
     await expect(card.getByText('Live', { exact: true })).toBeVisible();
-    await expect(card.getByText('party.party.created').first()).toBeVisible();
+    await expect(card.getByText('PROCESSED').first()).toBeVisible();
   });
 
   for (const [path, heading] of routes) {
@@ -59,4 +59,5 @@ test.describe('live federated verticals', () => {
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
   });
 });
+
 
