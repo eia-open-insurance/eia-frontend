@@ -5,6 +5,7 @@ import {
   RECENT_KEY,
   VERTICALS,
   cleanHref,
+  enrichPartyClaims,
   enrichPartyPolicies,
   readList,
   searchVertical,
@@ -73,7 +74,9 @@ export default function GlobalSearch({ navigate }) {
         .filter((result) => result.status === 'fulfilled')
         .map((result) => result.value)
         .filter((group) => group.items.length > 0);
-      const enriched = await enrichPartyPolicies(next, controller.signal);
+      const withPolicies = await enrichPartyPolicies(next, controller.signal);
+      if (controller.signal.aborted) return;
+      const enriched = await enrichPartyClaims(withPolicies, controller.signal);
       if (controller.signal.aborted) return;
       setGroups(enriched);
       setLoading(false);

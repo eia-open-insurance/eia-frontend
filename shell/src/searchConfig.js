@@ -88,6 +88,60 @@ export function sortMatches(items, term) {
 }
 
 /**
+ * A party hit is also a claims lead. Resolve every matched party to the direct
+ * claims that name it as claimant, so searching a person or organization
+ * returns the claims they are party to, not just the party master record.
+ * Enrichment is best effort: a failed lookup must never hide primary results.
+ */
+export async function enrichPartyClaims(groups, signal) {
+  const partyGroup = groups.find((group) => group.path === 'party');
+  if (!partyGroup || partyGroup.items.length === 0) return groups;
+  const seen = new Set();
+  groups.forEach((group) => group.items.forEach((item) => {
+    seen.add(`${item.type}:${item.id}`);
+  }));
+  const claims = [];
+  await Promise.all(partyGroup.items.map(async (party) => {
+    if (!party.id) return;
+    try {
+      const response = await fetch(`/api/v1/claims?claimantPartyId=${encodeURIComponent(party.id)}`, {
+        headers: bookHeaders('DIRECT'),
+        signal
+      });
+      if (!response.ok) return;
+      const body = await response.json();
+      const rows = Array.isArray(body) ? body : (Array.isArray(body.items) ? body.items : []);
+      rows.forEach((row) => {
+        if (!row.id) return;
+        const key = `DIRECT_CLAIM:${row.id}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const status = row.status || 'UNKNOWN';
+        const policy = row.policyNumber || (row.policy && row.policy.policyNumber);
+        claims.push({
+          id: row.id,
+          type: 'DIRECT_CLAIM',
+          label: row.claimNumber,
+          secondary: ['Claimant', status, policy].filter(Boolean).join(' · '),
+          status: row.status,
+          href: `/direct-claims?record=${row.id}`
+        });
+      });
+    } catch {
+      // A failed enrichment should never hide the primary search results.
+    }
+  }));
+  if (claims.length === 0) return groups;
+  const existing = groups.find((group) => group.path === 'direct-claims');
+  if (existing) {
+    const merged = [...existing.items, ...claims];
+    return groups.map((group) => group.path === 'direct-claims' ? { ...group, items: merged } : group);
+  }
+  const claimConfig = VERTICALS.find((vertical) => vertical.path === 'direct-claims');
+  return [...groups, { ...claimConfig, items: claims }];
+}
+
+/**
  * A party hit is also a policy lead. Resolve the first few matched parties to
  * their direct policies so searching an insured name returns the policies that
  * name insures, not just the party master record.

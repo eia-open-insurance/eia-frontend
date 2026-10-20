@@ -5,6 +5,7 @@ import {
   SAVED_KEY,
   VERTICALS,
   cleanHref,
+  enrichPartyClaims,
   enrichPartyPolicies,
   readList,
   searchVertical,
@@ -59,7 +60,9 @@ export default function SearchPage({ navigate }) {
             errors.push(VERTICALS[index].label);
           }
         });
-        const enriched = await enrichPartyPolicies(next, controller.signal);
+        const withPolicies = await enrichPartyPolicies(next, controller.signal);
+        if (controller.signal.aborted) return;
+        const enriched = await enrichPartyClaims(withPolicies, controller.signal);
         if (controller.signal.aborted) return;
         setGroups(enriched);
         setFailed(errors);

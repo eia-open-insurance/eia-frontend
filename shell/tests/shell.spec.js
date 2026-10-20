@@ -243,6 +243,70 @@ test('search enriches an insured party with its policies', async ({ page }) => {
   await expect(page.getByText('CGL · IN_FORCE')).toBeVisible();
 });
 
+test('search blends an insured party with its policies and direct claims', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/parties/search**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ query: 'Acme', limit: 25, items: [{ id: 'party-1', type: 'PARTY', label: 'PTY-000000001', secondary: 'Acme Manufacturing · ORGANIZATION', status: 'PROSPECT', href: '/party?record=party-1' }] })
+  }));
+  await page.route(/\/api\/v1\/policies\?insuredPartyId=party-1/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [{ id: 'policy-1', policyNumber: 'POL-2026-0000001', productCode: 'CGL', status: 'IN_FORCE' }] })
+  }));
+  await page.route(/\/api\/v1\/claims\?claimantPartyId=party-1/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 'claim-1', claimantPartyId: 'party-1', claimNumber: 'CLM-2026-0000001', status: 'OPEN', policyNumber: 'POL-2026-0000009' }])
+  }));
+  await page.goto('/search?q=Acme');
+  await expect(page.getByRole('button', { name: /PTY-000000001/ })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('button', { name: /POL-2026-0000001/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /CLM-2026-0000001/ })).toBeVisible();
+  await expect(page.getByText('CGL · IN_FORCE')).toBeVisible();
+});
+
+test('global search labels an enriched direct claim and opens its workspace', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/parties/search**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ query: 'Acme', limit: 4, items: [{ id: 'party-1', type: 'PARTY', label: 'PTY-000000001', secondary: 'Acme Manufacturing · ORGANIZATION', status: 'PROSPECT', href: '/party?record=party-1' }] })
+  }));
+  await page.route(/\/api\/v1\/claims\?claimantPartyId=party-1/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 'claim-1', claimantPartyId: 'party-1', claimNumber: 'CLM-2026-0000001', status: 'OPEN', policyNumber: 'POL-2026-0000009' }])
+  }));
+  await page.goto('/');
+  const input = page.getByRole('searchbox', { name: 'Search all records' });
+  await input.fill('Acme');
+  const dialog = page.getByRole('dialog', { name: 'Search results' });
+  await expect(dialog.getByText('DIRECT_CLAIM')).toBeVisible({ timeout: 15000 });
+  await expect(dialog.getByText('Claimant · OPEN · POL-2026-0000009')).toBeVisible();
+  await dialog.getByRole('button', { name: /CLM-2026-0000001/ }).click();
+  await expect(page).toHaveURL(/\/direct-claims\?record=claim-1$/);
+});
+
+test('search tolerates a failed direct-claim enrichment', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/parties/search**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ query: 'Acme', limit: 25, items: [{ id: 'party-1', type: 'PARTY', label: 'PTY-000000001', secondary: 'Acme Manufacturing · ORGANIZATION', status: 'PROSPECT', href: '/party?record=party-1' }] })
+  }));
+  await page.route(/\/api\/v1\/claims\?claimantPartyId=party-1/, (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ message: 'claims enrichment unavailable' })
+  }));
+  await page.goto('/search?q=Acme');
+  await expect(page.getByRole('button', { name: /PTY-000000001/ })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('1 records for')).toBeVisible();
+  await expect(page.getByRole('button', { name: /CLM-2026-0000001/ })).toHaveCount(0);
+});
+
 
 test('work queue separates my work from unassigned claims', async ({ page }) => {
   await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
