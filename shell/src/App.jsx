@@ -2,9 +2,11 @@ import React, { Suspense, useEffect, useState } from 'react';
 import './ui.css';
 import Dashboard from './Dashboard.jsx';
 import GlobalSearch from './GlobalSearch.jsx';
+import SearchPage from './SearchPage.jsx';
 
 const remotes = [
   { path: 'dashboard', label: 'Dashboard', component: Dashboard },
+  { path: 'search', label: 'Search', component: SearchPage, hidden: true },
   { path: 'direct-claims', label: 'Direct Claims', component: React.lazy(() => import('eia_direct_claims/App')) },
   { path: 'assumed-claims', label: 'Assumed Claims', component: React.lazy(() => import('eia_assumed_claims/App')) },
   { path: 'policy', label: 'Policy', component: React.lazy(() => import('eia_policy/App')) },
@@ -56,7 +58,7 @@ export default function App() {
         </div>
         <span className="eia-env">Local</span>
         <nav className="eia-nav" aria-label="Primary">
-          {remotes.map((r) => (
+          {remotes.filter((r) => !r.hidden).map((r) => (
             <a
               key={r.path}
               href={`/${r.path}`}
@@ -86,7 +88,9 @@ export default function App() {
 
       <section className="eia-content">
         <Suspense fallback={<div className="eia-card eia-empty">Loading {active.label}…</div>}>
-          {active.path === 'dashboard' ? <Dashboard navigate={navigate} /> : <Active key={routeKey} />}
+          {active.path === 'dashboard' && <Dashboard navigate={navigate} />}
+          {active.path === 'search' && <SearchPage navigate={navigate} />}
+          {active.path !== 'dashboard' && active.path !== 'search' && <Active key={routeKey} />}
         </Suspense>
       </section>
     </div>

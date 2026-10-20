@@ -1,0 +1,67 @@
+export const TENANT = '11111111-1111-7111-8111-111111111111';
+export const RECENT_KEY = 'eia.recentSearches';
+export const SAVED_KEY = 'eia.savedSearches';
+
+export const VERTICALS = [
+  { path: 'direct-claims', label: 'Direct Claims', endpoint: '/api/v1/claims/search', book: 'DIRECT', noun: 'claim' },
+  { path: 'assumed-claims', label: 'Assumed Claims', endpoint: '/api/v1/assumed-claims/search', book: 'ASSUMED', noun: 'assumed claim' },
+  { path: 'policy', label: 'Policy', endpoint: '/api/v1/policies/search', book: 'DIRECT', noun: 'policy' },
+  { path: 'contract', label: 'Contract', endpoint: '/api/v1/contracts/search', book: 'ASSUMED', noun: 'contract' },
+  { path: 'cession', label: 'Cession', endpoint: '/api/v1/cessions/search', book: 'DIRECT', noun: 'cession' },
+  { path: 'retrocession', label: 'Retrocession', endpoint: '/api/v1/retrocessions/search', book: 'ASSUMED', noun: 'retrocession' },
+  { path: 'document', label: 'Document', endpoint: '/api/v1/documents/search', noun: 'document' },
+  { path: 'payment', label: 'Payment', endpoint: '/api/v1/payments/search', noun: 'payment' },
+  { path: 'notifications', label: 'Notifications', endpoint: '/api/v1/notifications/search', noun: 'notification' },
+  { path: 'party', label: 'Party', endpoint: '/api/v1/parties/search', noun: 'party' }
+];
+
+export const CREATE_ACTIONS = [
+  { path: 'direct-claims', label: 'Direct claim', note: 'FNOL / first notice' },
+  { path: 'assumed-claims', label: 'Assumed claim', note: 'Cedent loss advice' },
+  { path: 'policy', label: 'Policy', note: 'Quote and bind' },
+  { path: 'contract', label: 'Contract', note: 'Treaty or facultative' },
+  { path: 'payment', label: 'Payment', note: 'Claim or expense' },
+  { path: 'cession', label: 'Cession', note: 'Outward reinsurance' },
+  { path: 'retrocession', label: 'Retrocession', note: 'Inward retro' },
+  { path: 'document', label: 'Document', note: 'Evidence record' },
+  { path: 'notifications', label: 'Notification', note: 'Delivery record' },
+  { path: 'party', label: 'Party', note: 'Insured, claimant, broker' }
+];
+
+export function bookHeaders(book) {
+  const headers = { 'X-EIA-Tenant': TENANT };
+  if (book) headers['X-EIA-Book'] = book;
+  return headers;
+}
+
+export function readList(key) {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) || '[]');
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeList(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage may be unavailable; search still works.
+  }
+}
+
+export function cleanHref(href) {
+  return String(href || '').replace(/^\//, '');
+}
+
+export async function searchVertical(vertical, term, limit, signal) {
+  const response = await fetch(`${vertical.endpoint}?q=${encodeURIComponent(term)}&limit=${limit}`, {
+    headers: bookHeaders(vertical.book),
+    signal
+  });
+  if (!response.ok) throw new Error(`${vertical.label} search failed (${response.status})`);
+  const body = await response.json();
+  const items = Array.isArray(body) ? body : (Array.isArray(body.items) ? body.items : []);
+  return { ...vertical, items };
+}

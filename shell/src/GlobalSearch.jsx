@@ -1,60 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-
-const TENANT = '11111111-1111-7111-8111-111111111111';
-const RECENT_KEY = 'eia.recentSearches';
-
-const VERTICALS = [
-  { path: 'direct-claims', label: 'Direct Claims', endpoint: '/api/v1/claims/search', book: 'DIRECT', noun: 'claim' },
-  { path: 'assumed-claims', label: 'Assumed Claims', endpoint: '/api/v1/assumed-claims/search', book: 'ASSUMED', noun: 'assumed claim' },
-  { path: 'policy', label: 'Policy', endpoint: '/api/v1/policies/search', book: 'DIRECT', noun: 'policy' },
-  { path: 'contract', label: 'Contract', endpoint: '/api/v1/contracts/search', book: 'ASSUMED', noun: 'contract' },
-  { path: 'cession', label: 'Cession', endpoint: '/api/v1/cessions/search', book: 'DIRECT', noun: 'cession' },
-  { path: 'retrocession', label: 'Retrocession', endpoint: '/api/v1/retrocessions/search', book: 'ASSUMED', noun: 'retrocession' },
-  { path: 'document', label: 'Document', endpoint: '/api/v1/documents/search', noun: 'document' },
-  { path: 'payment', label: 'Payment', endpoint: '/api/v1/payments/search', noun: 'payment' },
-  { path: 'notifications', label: 'Notifications', endpoint: '/api/v1/notifications/search', noun: 'notification' },
-  { path: 'party', label: 'Party', endpoint: '/api/v1/parties/search', noun: 'party' }
-];
-
-const CREATE_ACTIONS = [
-  { path: 'direct-claims', label: 'Direct claim', note: 'FNOL / first notice' },
-  { path: 'assumed-claims', label: 'Assumed claim', note: 'Cedent loss advice' },
-  { path: 'policy', label: 'Policy', note: 'Quote and bind' },
-  { path: 'contract', label: 'Contract', note: 'Treaty or facultative' },
-  { path: 'payment', label: 'Payment', note: 'Claim or expense' },
-  { path: 'cession', label: 'Cession', note: 'Outward reinsurance' },
-  { path: 'retrocession', label: 'Retrocession', note: 'Inward retro' },
-  { path: 'document', label: 'Document', note: 'Evidence record' },
-  { path: 'notifications', label: 'Notification', note: 'Delivery record' },
-  { path: 'party', label: 'Party', note: 'Insured, claimant, broker' }
-];
+import {
+  CREATE_ACTIONS,
+  RECENT_KEY,
+  VERTICALS,
+  cleanHref,
+  readList,
+  searchVertical,
+  writeList
+} from './searchConfig.js';
 
 function readRecent() {
-  try {
-    const value = JSON.parse(window.localStorage.getItem(RECENT_KEY) || '[]');
-    return Array.isArray(value) ? value.slice(0, 6) : [];
-  } catch {
-    return [];
-  }
+  return readList(RECENT_KEY).slice(0, 6);
 }
 
 function writeRecent(item) {
   const next = [item, ...readRecent().filter((x) => x.href !== item.href)].slice(0, 6);
-  try {
-    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // Storage may be unavailable; search still works.
-  }
-}
-
-function bookHeaders(book) {
-  const headers = { 'X-EIA-Tenant': TENANT };
-  if (book) headers['X-EIA-Book'] = book;
-  return headers;
-}
-
-function cleanHref(href) {
-  return String(href || '').replace(/^\//, '');
+  writeList(RECENT_KEY, next);
 }
 
 export default function GlobalSearch({ navigate }) {
@@ -103,16 +64,7 @@ export default function GlobalSearch({ navigate }) {
       const controller = new AbortController();
       abortRef.current = controller;
       setLoading(true);
-      const results = await Promise.allSettled(VERTICALS.map(async (vertical) => {
-        const response = await fetch(`${vertical.endpoint}?q=${encodeURIComponent(term)}&limit=4`, {
-          headers: bookHeaders(vertical.book),
-          signal: controller.signal
-        });
-        if (!response.ok) throw new Error(`${vertical.label} search failed`);
-        const body = await response.json();
-        const items = Array.isArray(body) ? body : (Array.isArray(body.items) ? body.items : []);
-        return { ...vertical, items };
-      }));
+      const results = await Promise.allSettled(VERTICALS.map((vertical) => searchVertical(vertical, term, 4, controller.signal)));
       if (controller.signal.aborted) return;
       const next = results
         .filter((result) => result.status === 'fulfilled')
@@ -247,6 +199,11 @@ export default function GlobalSearch({ navigate }) {
 
           <div className="eia-search-footer">
             <span>Search is tenant-scoped and respects the direct/assumed book wall.</span>
+            {query.trim().length >= 2 && (
+              <button type="button" onClick={() => { setOpen(false); navigate(`search?q=${encodeURIComponent(query.trim())}`); }}>
+                View all results →
+              </button>
+            )}
             <span><b>↑↓</b> navigate <b>↵</b> open <b>esc</b> close</span>
           </div>
         </div>

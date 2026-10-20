@@ -118,3 +118,37 @@ test('global search offers create actions from the search screen', async ({ page
   await expect(page).toHaveURL(/\/direct-claims\?new=1$/);
 });
 
+
+test('dedicated search page filters enough context and saves the search', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/parties/search**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      query: 'Acme',
+      limit: 25,
+      items: [{
+        id: '0192f3a4-8f1c-7c3a-9b2e-6a1d4f8e2b90',
+        type: 'PARTY',
+        label: 'PTY-000000001',
+        secondary: 'Acme Manufacturing · ORGANIZATION',
+        status: 'PROSPECT',
+        href: '/party?record=0192f3a4-8f1c-7c3a-9b2e-6a1d4f8e2b90'
+      }]
+    })
+  }));
+  await page.goto('/search?q=Acme');
+  await expect(page.getByRole('heading', { name: 'Record search' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /PTY-000000001/ })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('1 records for')).toBeVisible();
+  await page.getByRole('button', { name: 'Save search' }).click();
+  await expect(page.getByText('Saved searches')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Acme/ }).last()).toBeVisible();
+});
+
+test('search page exposes create actions', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.goto('/search?q=Acme');
+  await page.getByRole('button', { name: '+ Direct claim' }).click();
+  await expect(page).toHaveURL(/\/direct-claims\?new=1$/);
+});
