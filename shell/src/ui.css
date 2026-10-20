@@ -1,0 +1,378 @@
+:root {
+  --eia-navy: #0b2e4f;
+  --eia-navy-2: #123f68;
+  --eia-blue: #1f5f99;
+  --eia-blue-dark: #164a78;
+  --eia-ink: #1b2a3a;
+  --eia-muted: #5b6b7c;
+  --eia-line: #d9e1e9;
+  --eia-soft: #f3f6f9;
+  --eia-page: #f4f6f8;
+  --eia-green: #1f7a4d;
+  --eia-amber: #9a6200;
+  --eia-red: #9b1c1c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--eia-page);
+  color: var(--eia-ink);
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.eia-app { min-height: 100vh; }
+
+.eia-topbar {
+  background: var(--eia-navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 12px 28px;
+  min-height: 58px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.08);
+}
+
+.eia-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 230px;
+  line-height: 1.15;
+}
+
+.eia-brand strong { font-size: 16px; letter-spacing: .02em; }
+.eia-brand span { font-size: 10px; color: #b9cbe0; text-transform: uppercase; letter-spacing: .12em; margin-top: 3px; }
+
+.eia-env {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.20);
+  color: #dbe8f5;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.eia-nav { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: 1; }
+
+.eia-nav a {
+  color: #d6e2ef;
+  text-decoration: none;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.eia-nav a:hover { background: rgba(255,255,255,.10); color: #fff; }
+.eia-nav a.active { background: #fff; color: var(--eia-navy); font-weight: 700; }
+
+.eia-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #c8d8e9;
+  white-space: nowrap;
+}
+
+.eia-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2d6c9f;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.eia-context {
+  background: #fff;
+  border-bottom: 1px solid var(--eia-line);
+  padding: 9px 28px;
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  font-size: 11px;
+  color: var(--eia-muted);
+}
+
+.eia-context b { color: var(--eia-ink); font-weight: 600; }
+.eia-context .dot { color: #b9c4cf; }
+
+.eia-content { padding: 24px 28px 40px; }
+
+.eia-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.eia-page-header h1 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  color: var(--eia-navy);
+}
+
+.eia-page-header p { margin: 6px 0 0; color: var(--eia-muted); font-size: 13px; }
+
+.eia-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px 0 10px;
+}
+
+.eia-section-title h2 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--eia-navy);
+  letter-spacing: .01em;
+}
+
+.eia-grid { display: grid; gap: 14px; }
+.eia-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.eia-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.eia-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.eia-card {
+  background: #fff;
+  border: 1px solid var(--eia-line);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(16,42,67,.04);
+}
+
+.eia-card h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--eia-muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-weight: 600;
+}
+
+.eia-metric {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--eia-navy);
+  line-height: 1.1;
+  margin: 4px 0;
+}
+
+.eia-metric-label { color: var(--eia-muted); font-size: 11px; }
+.eia-metric-card { border-top: 3px solid var(--eia-blue); }
+
+.eia-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.eia-pill.green { background: #e6f5ec; color: var(--eia-green); }
+.eia-pill.amber { background: #fff3d9; color: var(--eia-amber); }
+.eia-pill.red { background: #fde8e8; color: var(--eia-red); }
+.eia-pill.blue { background: #e7f0fa; color: var(--eia-blue); }
+
+.eia-list { list-style: none; margin: 0; padding: 0; }
+.eia-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #edf1f5;
+  font-size: 12px;
+}
+.eia-list li:last-child { border-bottom: 0; }
+.eia-list a { color: var(--eia-blue); text-decoration: none; font-weight: 600; }
+
+.eia-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.eia-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--eia-line);
+  margin: 18px 0 16px;
+  overflow-x: auto;
+}
+
+.eia-tabs button,
+.eia-tab {
+  background: transparent !important;
+  color: var(--eia-muted) !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  padding: 9px 12px !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  white-space: nowrap;
+}
+
+.eia-tabs button:hover,
+.eia-tab:hover { color: var(--eia-blue) !important; }
+.eia-tabs button.active,
+.eia-tab.active { color: var(--eia-navy) !important; border-bottom-color: var(--eia-blue) !important; }
+
+.eia-empty {
+  border: 1px dashed #c9d5e0;
+  background: #fbfcfd;
+  border-radius: 8px;
+  padding: 28px;
+  text-align: center;
+  color: var(--eia-muted);
+  font-size: 13px;
+}
+
+.eia-muted { color: var(--eia-muted); }
+.eia-mono { font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+.eia-nowrap { white-space: nowrap; }
+
+/* Remote workbenches still contain inline styles. These rules normalize the
+   visual language without changing their layout or behavior. */
+main {
+  max-width: 1440px !important;
+  margin: 0 auto !important;
+  padding: 22px 28px 40px !important;
+  color: var(--eia-ink);
+  box-sizing: border-box;
+}
+
+main h1 {
+  font-size: 25px !important;
+  line-height: 1.2 !important;
+  letter-spacing: -.02em;
+  color: var(--eia-navy) !important;
+  margin: 0 0 4px !important;
+}
+
+main h2 {
+  font-size: 16px !important;
+  color: var(--eia-navy) !important;
+  letter-spacing: .01em;
+  margin: 22px 0 10px !important;
+}
+
+main h3 { color: var(--eia-navy) !important; }
+main p { color: var(--eia-muted); }
+
+main table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  background: #fff;
+  border: 1px solid var(--eia-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+main th {
+  background: var(--eia-soft) !important;
+  color: var(--eia-muted) !important;
+  font-size: 10px !important;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 10px 12px !important;
+  text-align: left;
+  border-bottom: 1px solid var(--eia-line);
+  white-space: nowrap;
+}
+
+main td {
+  padding: 9px 12px !important;
+  border-top: 1px solid #edf1f5 !important;
+  font-size: 12px !important;
+  vertical-align: middle;
+}
+
+main tr:hover td { background: #f8fafc !important; }
+
+main input,
+main select,
+main textarea {
+  background: #fff !important;
+  color: var(--eia-ink) !important;
+  border: 1px solid #c9d4df !important;
+  border-radius: 6px !important;
+  padding: 8px 10px !important;
+  font-size: 12px !important;
+  min-height: 34px;
+}
+
+main input:focus,
+main select:focus,
+main textarea:focus {
+  outline: 2px solid #b9d3ea;
+  border-color: var(--eia-blue) !important;
+}
+
+main button {
+  background: var(--eia-blue) !important;
+  color: #fff !important;
+  border: 1px solid var(--eia-blue) !important;
+  border-radius: 6px !important;
+  padding: 8px 13px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+}
+
+main button:hover { background: var(--eia-blue-dark) !important; }
+main button:disabled { opacity: .5 !important; cursor: not-allowed; }
+
+main form { gap: 10px !important; }
+main label { font-size: 11px !important; color: var(--eia-muted) !important; font-weight: 600; }
+
+main [role="alert"] {
+  background: #fdecec !important;
+  border: 1px solid #f0b4b4 !important;
+  color: var(--eia-red) !important;
+  padding: 9px 12px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+}
+
+main [role="status"] {
+  color: var(--eia-green) !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 1100px) {
+  .eia-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eia-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eia-topbar { gap: 14px; padding: 10px 16px; }
+  .eia-brand { min-width: auto; }
+  .eia-context { padding: 8px 16px; gap: 14px; flex-wrap: wrap; }
+  .eia-content { padding: 18px 16px 32px; }
+  main { padding: 18px 16px 32px !important; }
+}
+
+@media (max-width: 700px) {
+  .eia-grid-4, .eia-grid-3, .eia-grid-2 { grid-template-columns: 1fr; }
+  .eia-user { display: none; }
+  .eia-nav { order: 3; width: 100%; }
+}

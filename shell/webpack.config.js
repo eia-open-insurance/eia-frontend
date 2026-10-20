@@ -50,7 +50,10 @@ module.exports = {
   output: { path: path.resolve(__dirname, 'dist'), publicPath: 'auto', clean: true },
   resolve: { extensions: ['.js', '.jsx'] },
   module: {
-    rules: [{ test: /\.jsx?$/, exclude: /node_modules/, use: { loader: 'swc-loader', options: { jsc: { parser: { syntax: 'ecmascript', jsx: true }, transform: { react: { runtime: 'automatic' } } } } } }]
+    rules: [
+      { test: /\.jsx?$/, exclude: /node_modules/, use: { loader: 'swc-loader', options: { jsc: { parser: { syntax: 'ecmascript', jsx: true }, transform: { react: { runtime: 'automatic' } } } } } },
+      { test: /\.css$/, use: ['style-loader', 'css-loader'] }
+    ]
   },
   plugins: [
     new ModuleFederationPlugin({
@@ -71,3 +74,4 @@ module.exports = {
     ]
   }
 };
+
