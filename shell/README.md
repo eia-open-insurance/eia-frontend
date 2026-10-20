@@ -64,6 +64,14 @@ status and due date. A server `summary` supplies the card amounts/counts when pr
 values are calculated from the rows. The dashboard links to the workspace from its “Premium
 receivables” card, which shows the overdue count and amount.
 
+The table also shows each installment's `lastDunningLevel` and `lastDunningAt` as “Last dunning”.
+Rows that are DUE or OVERDUE offer “Send dunning”, which POSTs to
+`/api/v1/billing/installments/{installmentId}/dunning` with `X-EIA-Tenant`, `X-EIA-Book`, and
+`{level, channel, notes?}`. The modal defaults to `FIRST_NOTICE` when the installment is past due
+and `REMINDER` otherwise, with `EMAIL` as the channel. A successful POST reloads the queue and
+shows a notice; a duplicate level returns 409 and is surfaced in the modal. Dunning records a
+collection communication only: it does not change installment status, amount, or payment.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

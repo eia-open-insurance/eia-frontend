@@ -11,6 +11,21 @@ export const TENANT = '11111111-1111-7111-8111-111111111111';
 export const BOOK = 'DIRECT';
 export const RECEIVABLES_ENDPOINT = '/api/v1/billing/installments?limit=200';
 
+export const DUNNING_LEVELS = [
+  { value: 'REMINDER', label: 'Reminder' },
+  { value: 'FIRST_NOTICE', label: 'First notice' },
+  { value: 'SECOND_NOTICE', label: 'Second notice' },
+  { value: 'COLLECTIONS', label: 'Collections' }
+];
+
+export const DUNNING_CHANNELS = [
+  { value: 'EMAIL', label: 'Email' },
+  { value: 'LETTER', label: 'Letter' },
+  { value: 'PORTAL', label: 'Portal' }
+];
+
+export const DEFAULT_DUNNING_CHANNEL = 'EMAIL';
+
 const DEFAULT_CURRENCY = 'USD';
 
 // Installments in these states no longer represent collectible premium.
@@ -76,6 +91,38 @@ export function daysBetween(dueDate, today = todayIso()) {
   const currentTime = Date.parse(`${current}T00:00:00Z`);
   if (Number.isNaN(dueTime) || Number.isNaN(currentTime)) return null;
   return Math.max(0, Math.floor((currentTime - dueTime) / 86400000));
+}
+
+/** Billing records dunning on the installment, outside the policy billing plan. */
+export function dunningEndpoint(installmentId) {
+  return `/api/v1/billing/installments/${encodeURIComponent(String(installmentId || ''))}/dunning`;
+}
+
+function optionLabel(options, value) {
+  const normalized = text(value).toUpperCase();
+  const match = options.find((entry) => entry.value === normalized);
+  return match ? match.label : normalized;
+}
+
+export function dunningLevelLabel(level) {
+  return optionLabel(DUNNING_LEVELS, level);
+}
+
+export function dunningChannelLabel(channel) {
+  return optionLabel(DUNNING_CHANNELS, channel);
+}
+
+/** Past-due installments start at FIRST_NOTICE; otherwise a REMINDER is enough. */
+export function defaultDunningLevel(row) {
+  const days = numeric(row && row.daysPastDue);
+  return days !== null && days > 0 ? 'FIRST_NOTICE' : 'REMINDER';
+}
+
+/** Dunning is offered only while the installment is collectible as DUE/OVERDUE. */
+export function canSendDunning(row) {
+  if (!row || row.open === false) return false;
+  const status = text(firstDefined(row.effectiveStatus, row.status)).toUpperCase();
+  return status === 'DUE' || status === 'OVERDUE';
 }
 
 /** The collection queue may be wrapped in a body, a paged result, or a plan. */
@@ -155,6 +202,21 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     source.installmentStatus,
     source.paymentStatus
   )).toUpperCase() || 'DUE';
+  const lastDunning = source.lastDunning && typeof source.lastDunning === 'object'
+    ? source.lastDunning
+    : {};
+  const lastDunningLevel = text(firstDefined(
+    source.lastDunningLevel,
+    source.dunningLevel,
+    lastDunning.level
+  )).toUpperCase();
+  const lastDunningAt = dateOnly(firstDefined(
+    source.lastDunningAt,
+    source.dunningAt,
+    source.dunningDate,
+    lastDunning.at,
+    lastDunning.date
+  ));
 
   const open = !CLOSED_STATUSES.has(status);
   const computedDays = daysBetween(dueDate, today);
@@ -181,7 +243,9 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     effectiveStatus: overdue ? 'OVERDUE' : status,
     open,
     overdue,
-    daysPastDue
+    daysPastDue,
+    lastDunningLevel,
+    lastDunningAt
   };
 }
 

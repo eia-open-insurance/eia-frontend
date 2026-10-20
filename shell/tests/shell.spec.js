@@ -25,7 +25,9 @@ function receivablesFixture() {
         dueDate: localIsoOffset(-12),
         amount: '12500.0000',
         currency: 'USD',
-        status: 'DUE'
+        status: 'DUE',
+        lastDunningLevel: 'FIRST_NOTICE',
+        lastDunningAt: `${localIsoOffset(-6)}T14:20:00Z`
       },
       {
         installmentId: 'installment-2',
@@ -71,6 +73,34 @@ async function mockReceivables(page, payload = receivablesFixture()) {
     contentType: 'application/json',
     body: JSON.stringify(payload)
   }));
+}
+
+async function mockDunningReceivables(page, options = {}) {
+  const payload = options.payload || receivablesFixture();
+  const state = { getCount: 0, posted: null };
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/billing/installments**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      state.posted = request;
+      const result = options.onPost
+        ? options.onPost(request, payload)
+        : { status: 201, body: {} };
+      await route.fulfill({
+        status: result.status || 201,
+        contentType: result.contentType || 'application/json',
+        body: typeof result.body === 'string' ? result.body : JSON.stringify(result.body || {})
+      });
+      return;
+    }
+    state.getCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(payload)
+    });
+  });
+  return state;
 }
 
 test('shell loads the Party remote', async ({ page }) => {
@@ -463,4 +493,150 @@ test('premium receivables reports a billing service failure with retry', async (
   const alert = page.getByRole('alert');
   await expect(alert).toContainText('Premium receivables unavailable.');
   await expect(alert.getByRole('button', { name: 'Retry' })).toBeVisible();
+});
+
+test('premium receivables shows the last dunning level and date', async ({ page }) => {
+  await mockReceivables(page);
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await expect(table.getByRole('columnheader', { name: 'Last dunning' })).toBeVisible();
+
+  const dunned = table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('cell').nth(6);
+  await expect(dunned).toContainText('First notice');
+  await expect(dunned).toContainText(localIsoOffset(-6));
+
+  const undunned = table.getByRole('row', { name: /POL-2026-0000002/ }).getByRole('cell').nth(6);
+  await expect(undunned).toHaveText('—');
+});
+
+test('premium receivables offers Send dunning only for DUE and OVERDUE rows', async ({ page }) => {
+  const payload = receivablesFixture();
+  payload.items.push({
+    installmentId: 'installment-5',
+    policyId: 'policy-4',
+    policyNumber: 'POL-2026-0000004',
+    insurerName: 'Beacon Mutual',
+    installmentNumber: 1,
+    dueDate: localIsoOffset(20),
+    amount: '1500.0000',
+    currency: 'USD',
+    status: 'PENDING'
+  });
+  await mockReceivables(page, payload);
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+
+  await expect(table.getByRole('button', { name: 'Send dunning' })).toHaveCount(3);
+  const pending = table.getByRole('row', { name: /POL-2026-0000004/ });
+  await expect(pending).toContainText('PENDING');
+  await expect(pending.getByRole('button', { name: 'Send dunning' })).toHaveCount(0);
+});
+
+test('dunning modal defaults FIRST_NOTICE when past due and REMINDER when due', async ({ page }) => {
+  await mockReceivables(page);
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+
+  await table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('button', { name: 'Send dunning' }).click();
+  let dialog = page.getByRole('dialog', { name: 'Send dunning' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Level')).toHaveValue('FIRST_NOTICE');
+  await expect(dialog.getByLabel('Channel')).toHaveValue('EMAIL');
+  await expect(dialog.getByLabel(/Notes/)).toHaveValue('');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await table.getByRole('row', { name: /POL-2026-0000002/ }).getByRole('button', { name: 'Send dunning' }).click();
+  dialog = page.getByRole('dialog', { name: 'Send dunning' });
+  await expect(dialog.getByLabel('Level')).toHaveValue('REMINDER');
+  await expect(dialog.getByLabel('Channel')).toHaveValue('EMAIL');
+});
+
+test('sending dunning posts the payload and headers then refreshes the queue', async ({ page }) => {
+  const payload = receivablesFixture();
+  const state = await mockDunningReceivables(page, {
+    payload,
+    onPost: (request, current) => {
+      current.items[0].lastDunningLevel = 'SECOND_NOTICE';
+      current.items[0].lastDunningAt = `${localIsoOffset(0)}T16:45:00Z`;
+      return { status: 201, body: { id: 'dunning-1', level: 'SECOND_NOTICE', channel: 'LETTER' } };
+    }
+  });
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('button', { name: 'Send dunning' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Send dunning' });
+  await dialog.getByLabel('Level').selectOption('SECOND_NOTICE');
+  await dialog.getByLabel('Channel').selectOption('LETTER');
+  await dialog.getByLabel(/Notes/).fill('Called insured; promised payment Friday.');
+  await dialog.getByRole('button', { name: 'Send dunning' }).click();
+
+  await expect(dialog).toHaveCount(0);
+  expect(state.posted).not.toBeNull();
+  expect(state.posted.method()).toBe('POST');
+  expect(state.posted.url()).toContain('/api/v1/billing/installments/installment-1/dunning');
+  const headers = state.posted.headers();
+  expect(headers['x-eia-tenant']).toBe('11111111-1111-7111-8111-111111111111');
+  expect(headers['x-eia-book']).toBe('DIRECT');
+  expect(headers['content-type']).toContain('application/json');
+  expect(state.posted.postDataJSON()).toEqual({
+    level: 'SECOND_NOTICE',
+    channel: 'LETTER',
+    notes: 'Called insured; promised payment Friday.'
+  });
+
+  const notice = page.locator('.eia-dunning-notice');
+  await expect(notice).toHaveAttribute('role', 'status');
+  await expect(notice).toContainText('Dunning recorded.');
+  await expect(notice).toContainText('Second notice for POL-2026-0000001 installment 1 via Letter.');
+  await expect.poll(() => state.getCount).toBe(2);
+  await expect(table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('cell').nth(6)).toContainText('Second notice');
+});
+
+test('dunning duplicate 409 keeps the modal open with the conflict detail', async ({ page }) => {
+  const state = await mockDunningReceivables(page, {
+    onPost: () => ({
+      status: 409,
+      contentType: 'application/problem+json',
+      body: {
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        code: 'DUNNING_ALREADY_RECORDED',
+        detail: 'A FIRST_NOTICE dunning action was already recorded for this installment on 2026-10-14.'
+      }
+    })
+  });
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('button', { name: 'Send dunning' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Send dunning' });
+  await dialog.getByRole('button', { name: 'Send dunning' }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('alert')).toContainText('A FIRST_NOTICE dunning action was already recorded for this installment on 2026-10-14.');
+  await expect(dialog.getByRole('button', { name: 'Send dunning' })).toBeEnabled();
+  expect(state.getCount).toBe(1);
+});
+
+test('dunning service errors stay in the modal and do not refresh the queue', async ({ page }) => {
+  const state = await mockDunningReceivables(page, {
+    onPost: () => ({
+      status: 503,
+      body: { title: 'Service unavailable', status: 503, detail: 'Billing service is unavailable.' }
+    })
+  });
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('button', { name: 'Send dunning' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Send dunning' });
+  await dialog.getByRole('button', { name: 'Send dunning' }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('alert')).toContainText('Billing service is unavailable.');
+  expect(state.getCount).toBe(1);
+  await expect(table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('cell').nth(6)).toContainText('First notice');
 });
