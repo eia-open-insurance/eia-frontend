@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import './ui.css';
 import Dashboard from './Dashboard.jsx';
+import GlobalSearch from './GlobalSearch.jsx';
 
 const remotes = [
   { path: 'dashboard', label: 'Dashboard', component: Dashboard },
@@ -17,15 +18,19 @@ const remotes = [
 ];
 
 function currentPath() {
-  const path = window.location.pathname.replace(/^\//, '') || 'dashboard';
+  const path = window.location.pathname.replace(/^\//, '').split('/')[0] || 'dashboard';
   return remotes.some((r) => r.path === path) ? path : 'dashboard';
 }
 
 export default function App() {
   const [selected, setSelected] = useState(currentPath());
+  const [routeKey, setRouteKey] = useState(0);
 
   useEffect(() => {
-    const pop = () => setSelected(currentPath());
+    const pop = () => {
+      setSelected(currentPath());
+      setRouteKey((key) => key + 1);
+    };
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
   }, []);
@@ -34,8 +39,11 @@ export default function App() {
   const Active = active.component;
 
   const navigate = (path) => {
-    window.history.pushState({}, '', `/${path}`);
-    setSelected(path);
+    const route = String(path || '').replace(/^\//, '') || 'dashboard';
+    const base = route.split('?')[0];
+    window.history.pushState({}, '', `/${route}`);
+    setSelected(remotes.some((r) => r.path === base) ? base : 'dashboard');
+    setRouteKey((key) => key + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -66,20 +74,19 @@ export default function App() {
         </div>
       </header>
 
-      <div className="eia-context">
-        <span>Tenant <b>Meridian Specialty</b></span>
-        <span className="dot">•</span>
-        <span>Book <b>Direct + Assumed</b></span>
-        <span className="dot">•</span>
-        <span>Environment <b>Local Kubernetes</b></span>
-        <span className="dot">•</span>
-        <span>Role <b>Claims Adjuster</b></span>
-        <span style={{ marginLeft: 'auto' }}>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+      <div className="eia-searchstrip">
+        <GlobalSearch navigate={navigate} />
+        <div className="eia-search-context">
+          <span>Tenant <b>Meridian Specialty</b></span>
+          <span>Book <b>Direct + Assumed</b></span>
+          <span>Role <b>Claims Adjuster</b></span>
+          <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+        </div>
       </div>
 
       <section className="eia-content">
         <Suspense fallback={<div className="eia-card eia-empty">Loading {active.label}…</div>}>
-          {active.path === 'dashboard' ? <Dashboard navigate={navigate} /> : <Active />}
+          {active.path === 'dashboard' ? <Dashboard navigate={navigate} /> : <Active key={routeKey} />}
         </Suspense>
       </section>
     </div>

@@ -83,3 +83,38 @@ test('event stream card degrades gracefully when event ingest is unavailable', a
   await expect(card.getByText('Unavailable', { exact: true })).toBeVisible();
   await expect(card.getByText('Event stream unavailable; the rest of the dashboard is unaffected.')).toBeVisible();
 });
+
+test('global search finds a record and opens it', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/parties/search**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      query: 'Acme',
+      limit: 4,
+      items: [{
+        id: '0192f3a4-8f1c-7c3a-9b2e-6a1d4f8e2b90',
+        type: 'PARTY',
+        label: 'PTY-000000001',
+        secondary: 'Acme Manufacturing · ORGANIZATION',
+        status: 'ACTIVE',
+        href: '/party?record=0192f3a4-8f1c-7c3a-9b2e-6a1d4f8e2b90'
+      }]
+    })
+  }));
+  await page.goto('/');
+  const input = page.getByRole('searchbox', { name: 'Search all records' });
+  await input.fill('Acme');
+  await expect(page.getByText('Acme Manufacturing · ORGANIZATION')).toBeVisible();
+  await page.getByRole('button', { name: /PTY-000000001/ }).click();
+  await expect(page).toHaveURL(/\/party\?record=0192f3a4/);
+});
+
+test('global search offers create actions from the search screen', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.goto('/');
+  await page.getByRole('searchbox', { name: 'Search all records' }).click();
+  await page.getByRole('dialog', { name: 'Search results' }).getByRole('button', { name: /^Direct claim/ }).click();
+  await expect(page).toHaveURL(/\/direct-claims\?new=1$/);
+});
+

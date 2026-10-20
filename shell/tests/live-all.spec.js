@@ -35,3 +35,22 @@ test.describe('live federated verticals', () => {
 });
 
 
+
+test('global search opens a party record from the live index', async ({ page }) => {
+  await page.goto('/');
+  const input = page.getByRole('searchbox', { name: 'Search all records' });
+  await input.fill('Acme');
+  const result = page.getByRole('button', { name: /PTY-000000001/ }).first();
+  await expect(result).toBeVisible({ timeout: 20000 });
+  await result.click();
+  await expect(page).toHaveURL(/\/party\?record=/);
+  await expect(page.getByText('Acme Manufacturing').first()).toBeVisible({ timeout: 15000 });
+});
+
+test('global search creates a direct claim from the search screen', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('searchbox', { name: 'Search all records' }).click();
+  await page.getByRole('dialog', { name: 'Search results' }).getByRole('button', { name: /^Direct claim/ }).click();
+  await expect(page).toHaveURL(/\/direct-claims\?new=1$/);
+  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15000 });
+});
