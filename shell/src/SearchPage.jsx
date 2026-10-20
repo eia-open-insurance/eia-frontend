@@ -4,8 +4,10 @@ import {
   SAVED_KEY,
   VERTICALS,
   cleanHref,
+  enrichPartyPolicies,
   readList,
   searchVertical,
+  sortMatches,
   writeList
 } from './searchConfig.js';
 
@@ -45,7 +47,7 @@ export default function SearchPage({ navigate }) {
     abortRef.current = controller;
     setLoading(true);
     Promise.allSettled(VERTICALS.map((vertical) => searchVertical(vertical, submitted.trim(), 25, controller.signal)))
-      .then((results) => {
+      .then(async (results) => {
         if (controller.signal.aborted) return;
         const next = [];
         const errors = [];
@@ -56,7 +58,9 @@ export default function SearchPage({ navigate }) {
             errors.push(VERTICALS[index].label);
           }
         });
-        setGroups(next);
+        const enriched = await enrichPartyPolicies(next, controller.signal);
+        if (controller.signal.aborted) return;
+        setGroups(enriched);
         setFailed(errors);
         setLoading(false);
       });
@@ -249,4 +253,5 @@ export default function SearchPage({ navigate }) {
     </div>
   );
 }
+
 

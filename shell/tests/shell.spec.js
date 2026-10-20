@@ -152,3 +152,21 @@ test('search page exposes create actions', async ({ page }) => {
   await page.getByRole('button', { name: '+ Direct claim' }).click();
   await expect(page).toHaveURL(/\/direct-claims\?new=1$/);
 });
+
+test('search enriches an insured party with its policies', async ({ page }) => {
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/v1/parties/search**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ query: 'Acme', limit: 4, items: [{ id: 'party-1', type: 'PARTY', label: 'PTY-000000001', secondary: 'Acme Manufacturing · ORGANIZATION', status: 'PROSPECT', href: '/party?record=party-1' }] })
+  }));
+  await page.route(/\/api\/v1\/policies\?insuredPartyId=party-1/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [{ id: 'policy-1', policyNumber: 'POL-2026-0000001', productCode: 'CGL', status: 'IN_FORCE' }], page: 0, size: 3, total: 1 })
+  }));
+  await page.goto('/search?q=Acme');
+  await expect(page.getByRole('button', { name: /POL-2026-0000001/ })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('CGL · IN_FORCE')).toBeVisible();
+});
+

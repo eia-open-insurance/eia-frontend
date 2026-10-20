@@ -4,8 +4,10 @@ import {
   RECENT_KEY,
   VERTICALS,
   cleanHref,
+  enrichPartyPolicies,
   readList,
   searchVertical,
+  sortMatches,
   writeList
 } from './searchConfig.js';
 
@@ -70,9 +72,11 @@ export default function GlobalSearch({ navigate }) {
         .filter((result) => result.status === 'fulfilled')
         .map((result) => result.value)
         .filter((group) => group.items.length > 0);
-      setGroups(next);
+      const enriched = await enrichPartyPolicies(next, controller.signal);
+      if (controller.signal.aborted) return;
+      setGroups(enriched);
       setLoading(false);
-      setActiveIndex(next.length > 0 ? 0 : -1);
+      setActiveIndex(enriched.length > 0 ? 0 : -1);
     }, 180);
     return () => window.clearTimeout(timer);
   }, [query]);
@@ -211,4 +215,5 @@ export default function GlobalSearch({ navigate }) {
     </div>
   );
 }
+
 

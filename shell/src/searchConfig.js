@@ -86,3 +86,49 @@ export function sortMatches(items, term) {
     return String(a.label || '').localeCompare(String(b.label || ''));
   });
 }
+
+/**
+ * A party hit is also a policy lead. Resolve the first few matched parties to
+ * their direct policies so searching an insured name returns the policies that
+ * name insures, not just the party master record.
+ */
+export async function enrichPartyPolicies(groups, signal) {
+  const partyGroup = groups.find((group) => group.path === 'party');
+  if (!partyGroup || partyGroup.items.length === 0) return groups;
+  const seen = new Set();
+  const policies = [];
+  await Promise.all(partyGroup.items.slice(0, 3).map(async (party) => {
+    try {
+      const response = await fetch(`/api/v1/policies?insuredPartyId=${encodeURIComponent(party.id)}&page=0&size=3`, {
+        headers: bookHeaders('DIRECT'),
+        signal
+      });
+      if (!response.ok) return;
+      const body = await response.json();
+      const rows = Array.isArray(body) ? body : (Array.isArray(body.items) ? body.items : []);
+      rows.forEach((row) => {
+        if (!row.id || seen.has(row.id)) return;
+        seen.add(row.id);
+        policies.push({
+          id: row.id,
+          type: 'POLICY',
+          label: row.policyNumber,
+          secondary: `${row.productCode || 'POLICY'} · ${row.status || 'UNKNOWN'}`,
+          status: row.status,
+          href: `/policy?record=${row.id}`
+        });
+      });
+    } catch {
+      // A failed enrichment should never hide the primary search results.
+    }
+  }));
+  if (policies.length === 0) return groups;
+  const existing = groups.find((group) => group.path === 'policy');
+  if (existing) {
+    const known = new Set(existing.items.map((item) => item.id));
+    const merged = [...existing.items, ...policies.filter((item) => !known.has(item.id))];
+    return groups.map((group) => group.path === 'policy' ? { ...group, items: merged } : group);
+  }
+  const policyConfig = VERTICALS.find((vertical) => vertical.path === 'policy');
+  return [...groups, { ...policyConfig, items: policies }];
+}
