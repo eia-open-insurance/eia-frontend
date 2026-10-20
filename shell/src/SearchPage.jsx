@@ -69,7 +69,7 @@ export default function SearchPage({ navigate }) {
     let rows = all;
     if (type !== 'ALL') rows = rows.filter((item) => item.vertical === type);
     if (status !== 'ALL') rows = rows.filter((item) => item.status === status);
-    return rows.slice().sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    return sortMatches(rows, submitted);
   }, [all, type, status]);
   const counts = useMemo(() => {
     const map = {};
@@ -249,3 +249,4 @@ export default function SearchPage({ navigate }) {
     </div>
   );
 }
+

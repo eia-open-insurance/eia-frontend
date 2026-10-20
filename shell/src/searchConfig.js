@@ -65,3 +65,24 @@ export async function searchVertical(vertical, term, limit, signal) {
   const items = Array.isArray(body) ? body : (Array.isArray(body.items) ? body.items : []);
   return { ...vertical, items };
 }
+
+export function matchScore(item, term) {
+  const q = String(term || '').trim().toLowerCase();
+  const label = String(item.label || '').toLowerCase();
+  const secondary = String(item.secondary || '').toLowerCase();
+  if (!q) return 0;
+  if (label === q) return 0;
+  if (label.startsWith(q)) return 1;
+  if (label.includes(q)) return 2;
+  if (secondary.startsWith(q)) return 3;
+  if (secondary.includes(q)) return 4;
+  return 5;
+}
+
+export function sortMatches(items, term) {
+  return [...items].sort((a, b) => {
+    const delta = matchScore(a, term) - matchScore(b, term);
+    if (delta !== 0) return delta;
+    return String(a.label || '').localeCompare(String(b.label || ''));
+  });
+}

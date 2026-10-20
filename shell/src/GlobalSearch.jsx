@@ -211,3 +211,4 @@ export default function GlobalSearch({ navigate }) {
     </div>
   );
 }
+
