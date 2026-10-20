@@ -88,6 +88,19 @@ export default function WorkPage({ navigate }) {
   const unassigned = open.filter((row) => !row.owner);
   const assigned = open.filter((row) => row.owner);
   const aged = open.filter((row) => row.ageDays != null && row.ageDays > 30);
+  const adjusterRows = useMemo(() => {
+    const map = new Map();
+    assigned.forEach((row) => {
+      const key = row.owner;
+      const current = map.get(key) || { owner: key, total: 0, aged: 0, teams: new Set(), oldest: 0 };
+      current.total += 1;
+      if (row.ageDays != null && row.ageDays > 30) current.aged += 1;
+      if (row.team) current.teams.add(row.team);
+      current.oldest = Math.max(current.oldest, row.ageDays || 0);
+      map.set(key, current);
+    });
+    return [...map.values()].sort((a, b) => b.total - a.total).map((row) => ({ ...row, teams: [...row.teams].join(', ') }));
+  }, [assigned]);
   const teamRows = useMemo(() => {
     const map = new Map();
     open.forEach((row) => {
@@ -204,6 +217,31 @@ export default function WorkPage({ navigate }) {
                   <td>{row.total}</td>
                   <td>{row.unassigned}</td>
                   <td>{row.aged}</td>
+                  <td>{row.oldest ? `${row.oldest} days` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="eia-section-title">
+        <h2>Adjuster workload</h2>
+        <span className="eia-muted" style={{ fontSize: 11 }}>Open claims by owner</span>
+      </div>
+      <div className="eia-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {adjusterRows.length === 0 ? (
+          <div className="eia-empty">No assigned claims in this view.</div>
+        ) : (
+          <table>
+            <thead><tr><th>Adjuster</th><th>Open claims</th><th>Aged 30+</th><th>Teams</th><th>Oldest claim</th></tr></thead>
+            <tbody>
+              {adjusterRows.map((row) => (
+                <tr key={row.owner}>
+                  <td>{row.owner}</td>
+                  <td>{row.total}</td>
+                  <td>{row.aged}</td>
+                  <td>{row.teams || '—'}</td>
                   <td>{row.oldest ? `${row.oldest} days` : '—'}</td>
                 </tr>
               ))}
