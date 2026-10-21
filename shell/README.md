@@ -47,6 +47,39 @@ regex rewrite. Rebuild `dist/` with `npm run build` after changing `webpack.conf
 against an already-running stack (default `http://localhost:3000`, override with
 `EIA_BASE_URL`); without `EIA_LIVE` Playwright starts the shell and Party dev servers.
 
+## Sign-in
+
+Authentication is a runtime opt-in so local development and the existing test suite keep the
+open shell. `public/index.html` loads `/auth-config.js` before the bundle; the shell enables the
+login gate only when that file sets `window.__EIA_AUTH_ENABLED__ === true`. A missing file or flag
+means no login page, no token injection, and the header keeps the static demo identity.
+
+The deployment (nginx / the Kubernetes shell config) serves `/auth-config.js` and proxies `/auth/`
+to `eia-platform/auth`. `npm start` mirrors that proxy to `http://localhost:9000`; to try sign-in
+locally against a running auth service, temporarily add `shell/public/auth-config.js` containing
+`window.__EIA_AUTH_ENABLED__ = true;` (the dev server serves `public/` at the root). Do not commit an
+enabled config as a static asset.
+
+When enabled, `AuthGate` renders `LoginPage` until a token is present. `src/auth.js` implements:
+
+- `login(username, password)` posts `grant_type=password` to `/auth/oauth2/token` with
+  `Basic base64(eia-shell:shell-secret)` and stores the response's `access_token` /
+  `refresh_token` in `sessionStorage`.
+- `getToken()`, `getRefreshToken()`, `isAuthenticated()`, `getExpiry()` (epoch milliseconds from
+  the JWT `exp`) and `getUsername()` (JWT `sub`).
+- `logout()` clears both keys and reloads.
+- A `window.fetch` wrapper adds `Authorization: Bearer` to same-origin `/api` requests and clears
+  the session plus reloads once on a 401.
+- An `XMLHttpRequest` wrapper adds the same header to `/api` calls when the caller does not set
+  `Authorization` itself.
+
+The local demo user is `adjuster` / `password`; the login card shows that hint. The password grant
+and bundled `eia-shell` secret are for the local/demo stack only. A production identity integration
+should use authorization-code + PKCE instead.
+
+`npx playwright test tests/auth.spec.js` covers the enabled login/logout flow, bearer injection for
+fetch and XHR, the `invalid_grant` error, 401 handling, and the disabled default.
+
 ## Operations dashboard
 
 The default dashboard route renders the platform metrics and an “Event stream” card. The card

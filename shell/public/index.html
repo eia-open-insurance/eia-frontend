@@ -1,3 +1,13 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>EIA Open Insurance</title></head>
-<body><div id="root"></div></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EIA Open Insurance</title>
+    <!-- Runtime auth opt-in. Deployments serve this file with
+         window.__EIA_AUTH_ENABLED__ = true; when it is missing or the flag is
+         not true, the shell runs without authentication (local dev default). -->
+    <script src="/auth-config.js"></script>
+  </head>
+  <body><div id="root"></div></body>
+</html>

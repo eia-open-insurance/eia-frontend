@@ -5,6 +5,7 @@ import GlobalSearch from './GlobalSearch.jsx';
 import ReceivablesPage from './ReceivablesPage.jsx';
 import SearchPage from './SearchPage.jsx';
 import WorkPage from './WorkPage.jsx';
+import { getUsername, isAuthEnabled, logout } from './auth.js';
 
 const remotes = [
   { path: 'dashboard', label: 'Dashboard', component: Dashboard },
@@ -31,6 +32,9 @@ function currentPath() {
 export default function App() {
   const [selected, setSelected] = useState(currentPath());
   const [routeKey, setRouteKey] = useState(0);
+  const authEnabled = isAuthEnabled();
+  const username = authEnabled ? getUsername() : null;
+  const initials = String(username || 'EIA').slice(0, 2).toUpperCase();
 
   useEffect(() => {
     const pop = () => {
@@ -74,9 +78,19 @@ export default function App() {
             </a>
           ))}
         </nav>
-        <div className="eia-user">
-          <span className="eia-avatar">AA</span>
-          <span>A. Adjuster<br />Claims Operations</span>
+        <div className={authEnabled ? 'eia-user eia-user-auth' : 'eia-user'}>
+          {authEnabled ? (
+            <>
+              <span className="eia-avatar" aria-hidden="true">{initials}</span>
+              <span className="eia-user-name">{username || 'Signed in'}</span>
+              <button type="button" className="eia-logout" onClick={logout}>Logout</button>
+            </>
+          ) : (
+            <>
+              <span className="eia-avatar">AA</span>
+              <span>A. Adjuster<br />Claims Operations</span>
+            </>
+          )}
         </div>
       </header>
 

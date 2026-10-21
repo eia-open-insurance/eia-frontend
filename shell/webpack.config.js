@@ -69,6 +69,10 @@ module.exports = {
     historyApiFallback: true,
     hot: true,
     proxy: [
+      // Same-origin auth for local development when an auth-config.js opts in:
+      // /auth/oauth2/token -> the Spring Authorization Server on :9000. The
+      // trailing slash keeps /auth-config.js out of this proxy.
+      { context: ['/auth/'], target: 'http://localhost:9000', changeOrigin: true, pathRewrite: { '^/auth': '' } },
       { context: ['/api'], target: 'http://localhost:8080', changeOrigin: true },
       ...remoteProxy
     ]

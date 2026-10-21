@@ -94,6 +94,30 @@ body {
   font-size: 10px;
 }
 
+.eia-user-name {
+  color: #eef5fb;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.eia-user .eia-logout {
+  background: transparent;
+  color: #d6e2ef;
+  border: 1px solid rgba(255,255,255,.30);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.eia-user .eia-logout:hover { background: rgba(255,255,255,.12); color: #fff; }
+.eia-user .eia-logout:focus-visible { outline: 2px solid #8cc2f0; outline-offset: 2px; }
+
 .eia-context {
   background: #fff;
   border-bottom: 1px solid var(--eia-line);
@@ -374,6 +398,7 @@ main [role="status"] {
 @media (max-width: 700px) {
   .eia-grid-4, .eia-grid-3, .eia-grid-2 { grid-template-columns: 1fr; }
   .eia-user { display: none; }
+  .eia-user.eia-user-auth { display: flex; margin-left: auto; }
   .eia-nav { order: 3; width: 100%; }
 }
 
@@ -1167,4 +1192,156 @@ main [role="status"] {
   .eia-modal .eia-form-grid .span-3 { grid-column: auto; }
   .eia-modal-actions { justify-content: flex-start; }
   .eia-dunning-notice { flex-wrap: wrap; }
+}
+
+/* Sign-in */
+
+.eia-auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(circle at 16% 10%, rgba(58, 128, 186, .48), transparent 42%),
+    radial-gradient(circle at 84% 92%, rgba(31, 95, 153, .38), transparent 46%),
+    var(--eia-navy);
+}
+
+.eia-auth-panel { width: min(430px, 100%); }
+
+.eia-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.eia-auth-mark {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.26);
+  background: linear-gradient(135deg, #2f79b6, #164a78);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: .04em;
+}
+
+.eia-auth-brand strong { display: block; font-size: 16px; letter-spacing: .01em; }
+.eia-auth-brand > div > span {
+  display: block;
+  margin-top: 3px;
+  color: #b9cbe0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .13em;
+}
+
+.eia-auth-card {
+  background: #fff;
+  border-top: 3px solid #2f79b6;
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: 0 24px 60px rgba(3, 20, 38, .38);
+}
+
+.eia-auth-card h1 {
+  margin: 0 0 6px;
+  color: var(--eia-navy);
+  font-size: 22px;
+  letter-spacing: -.02em;
+}
+
+.eia-auth-lede {
+  margin: 0 0 18px;
+  color: var(--eia-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.eia-auth-card form { display: flex; flex-direction: column; gap: 14px; }
+.eia-auth-field { display: flex; flex-direction: column; gap: 5px; }
+
+.eia-auth-field label {
+  color: var(--eia-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.eia-auth-field input {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid #c6d2de;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--eia-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.eia-auth-field input:focus {
+  outline: 2px solid #b9d3ea;
+  border-color: var(--eia-blue);
+}
+
+.eia-auth-submit {
+  margin-top: 2px;
+  padding: 11px 14px;
+  border: 1px solid var(--eia-blue);
+  border-radius: 6px;
+  background: var(--eia-blue);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.eia-auth-submit:hover:not(:disabled) { background: var(--eia-blue-dark); }
+.eia-auth-submit:disabled { opacity: .6; cursor: not-allowed; }
+.eia-auth-submit:focus-visible { outline: 2px solid #8cc2f0; outline-offset: 2px; }
+
+.eia-auth-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #f0b4b4;
+  border-radius: 6px;
+  background: #fdecec;
+  color: var(--eia-red);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.eia-auth-hint {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--eia-line);
+  color: var(--eia-muted);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.eia-auth-hint b { color: var(--eia-ink); font-family: "Cascadia Code", Consolas, monospace; }
+
+.eia-auth-footer {
+  margin: 16px 0 0;
+  color: #9fb6cc;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+@media (max-width: 520px) {
+  .eia-auth-page { padding: 22px 14px; }
+  .eia-auth-card { padding: 22px 18px; }
+  .eia-auth-card h1 { font-size: 20px; }
 }
