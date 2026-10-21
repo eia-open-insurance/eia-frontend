@@ -1021,9 +1021,16 @@ main [role="status"] {
   border-radius: 2px;
 }
 
-/* Premium receivables: dunning */
+/* Premium receivables: dunning and credited balances */
 .eia-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .eia-dunning-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.eia-credited-amount {
+  display: block;
+  margin-top: 2px;
+  color: var(--eia-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
 
 .eia-dunning-notice {
   display: flex;

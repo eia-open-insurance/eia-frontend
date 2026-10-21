@@ -60,9 +60,12 @@ card `Unavailable` without affecting the rest of the page.
 `/receivables` is a hidden shell route (not in the primary navigation) that renders the cross-policy
 premium collection queue. It reads `/api/v1/billing/installments?limit=200` with `X-EIA-Tenant` and
 `X-EIA-Book: DIRECT`, keeps only open installments, and derives overdue status from the installment
-status and due date. A server `summary` supplies the card amounts/counts when present; otherwise the
-values are calculated from the rows. The dashboard links to the workspace from its “Premium
-receivables” card, which shows the overdue count and amount.
+status and due date. Each amount is the net `outstandingAmount` (falling back to `amount -
+creditedAmount`), and a positive `creditedAmount` is shown beneath it. Queue totals sum that net
+outstanding balance so applied credit notes cannot overstate the cards. A server `summary` supplies
+the card amounts/counts when present, except that a credit-bearing payload recomputes overdue/due
+totals from the rows; otherwise the values are calculated from the rows. The dashboard links to the
+workspace from its “Premium receivables” card, which shows the overdue count and net amount.
 
 The table also shows each installment's `lastDunningLevel` and `lastDunningAt` as “Last dunning”.
 Rows that are DUE or OVERDUE offer “Send dunning”, which POSTs to

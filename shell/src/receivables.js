@@ -190,6 +190,28 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     source.dueAmount,
     source.premiumAmount
   ));
+  // A credit note reduces premium owed. Serve the net balance when the billing
+  // read carries it; otherwise fall back to the scheduled amount less credits.
+  const credited = numeric(firstDefined(
+    source.creditedAmount,
+    source.creditAmount,
+    source.credited,
+    source.totalCreditedAmount,
+    source.creditNoteAmount
+  ));
+  const creditedAmount = credited === null ? 0 : Math.max(credited, 0);
+  const outstandingField = firstDefined(
+    source.outstandingAmount,
+    source.netAmount,
+    source.balanceAmount,
+    source.remainingAmount
+  );
+  const explicitOutstanding = numeric(outstandingField);
+  const outstandingAmount = explicitOutstanding !== null
+    ? Math.max(explicitOutstanding, 0)
+    : amount === null
+      ? null
+      : Math.max(amount - creditedAmount, 0);
   const currency = text(firstDefined(
     source.currency,
     source.currencyCode,
@@ -238,6 +260,9 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     installmentNumber,
     dueDate,
     amount,
+    creditedAmount,
+    outstandingAmount,
+    hasOutstandingField: outstandingField !== undefined,
     currency,
     status,
     effectiveStatus: overdue ? 'OVERDUE' : status,
@@ -340,6 +365,17 @@ function readSummary(payload) {
       root.dueAmount
     ),
     totalAmount: summaryValue(summary.totalAmount, root.totalAmount),
+    outstandingAmount: summaryValue(
+      summary.outstandingAmount,
+      summary.totalOutstandingAmount,
+      summary.netAmount,
+      root.outstandingAmount
+    ),
+    creditedAmount: summaryValue(
+      summary.creditedAmount,
+      summary.totalCreditedAmount,
+      root.creditedAmount
+    ),
     policyCount: summaryValue(
       summary.policyCount,
       summary.policiesInQueue,
@@ -350,8 +386,11 @@ function readSummary(payload) {
   };
 }
 
-function sumAmounts(rows) {
-  return rows.reduce((total, row) => total + (row.amount || 0), 0);
+function sumOutstanding(rows) {
+  return rows.reduce((total, row) => {
+    const outstanding = numeric(row.outstandingAmount);
+    return total + (outstanding === null ? (numeric(row.amount) || 0) : outstanding);
+  }, 0);
 }
 
 function uniquePolicies(rows) {
@@ -374,8 +413,10 @@ function compareRows(left, right) {
 /**
  * One snapshot for the page cards and the dashboard card. Server summary values
  * win when present; otherwise overdue/due amounts and counts are derived from
- * the installment status and due date. Tabs always use the loaded rows so the
- * table and its counts cannot disagree.
+ * the installment status and due date. Amounts are the net outstanding balance
+ * (credits reduce them), and a credit-bearing payload always recomputes the
+ * totals from the rows so a gross server total cannot overstate the queue. Tabs
+ * always use the loaded rows so the table and its counts cannot disagree.
  */
 export function summarizeReceivables(payload, today = todayIso()) {
   const allRows = receivablesFromPayload(payload, today);
@@ -388,23 +429,42 @@ export function summarizeReceivables(payload, today = todayIso()) {
   const overdueCount = server.overdueCount === null ? overdueRows.length : Math.max(0, Math.trunc(server.overdueCount));
   const dueCount = server.dueCount === null ? dueRows.length : Math.max(0, Math.trunc(server.dueCount));
   const policyCount = server.policyCount === null ? uniquePolicies(rows) : Math.max(0, Math.trunc(server.policyCount));
-  const computedDueAmount = sumAmounts(dueRows);
-  const dueAmount = server.dueAmount === null
-    ? server.totalAmount !== null && server.overdueAmount !== null
-      ? Math.max(0, server.totalAmount - server.overdueAmount)
-      : computedDueAmount
-    : server.dueAmount;
+  const computedOverdueAmount = sumOutstanding(overdueRows);
+  const computedDueAmount = sumOutstanding(dueRows);
+  // A server summary may still carry gross scheduled amounts. When the rows
+  // carry an explicit outstanding balance or any credit, the queue totals must
+  // be net, so they are summed from each row's outstandingAmount (falling back
+  // to amount - creditedAmount per row).
+  const hasNetAmounts = rows.some(
+    (row) => row.hasOutstandingField || (row.creditedAmount || 0) > 0
+  ) || (server.creditedAmount !== null && server.creditedAmount > 0);
+  let overdueAmount;
+  let dueAmount;
+  if (hasNetAmounts) {
+    overdueAmount = computedOverdueAmount;
+    dueAmount = computedDueAmount;
+  } else {
+    overdueAmount = server.overdueAmount === null
+      ? computedOverdueAmount
+      : server.overdueAmount;
+    dueAmount = server.dueAmount === null
+      ? server.totalAmount !== null && server.overdueAmount !== null
+        ? Math.max(0, server.totalAmount - server.overdueAmount)
+        : computedDueAmount
+      : server.dueAmount;
+  }
 
   return {
     rows,
     overdueRows,
     dueRows,
     overdueCount,
-    overdueAmount: server.overdueAmount === null ? sumAmounts(overdueRows) : server.overdueAmount,
+    overdueAmount,
     dueCount,
     dueAmount,
     policyCount,
     currency,
+    creditedAmount: server.creditedAmount,
     hasServerSummary: [server.overdueCount, server.overdueAmount, server.dueCount, server.dueAmount, server.policyCount]
       .some((value) => value !== null)
   };
@@ -415,6 +475,12 @@ export function receivableMatches(row, term) {
   const query = String(term || '').trim().toLowerCase();
   if (!query) return true;
   const amount = row.amount === null || row.amount === undefined ? '' : row.amount;
+  const outstanding = row.outstandingAmount === null || row.outstandingAmount === undefined
+    ? ''
+    : row.outstandingAmount;
+  const credited = row.creditedAmount === null || row.creditedAmount === undefined
+    ? ''
+    : row.creditedAmount;
   const haystack = [
     row.policyNumber,
     row.policyId,
@@ -426,7 +492,11 @@ export function receivableMatches(row, term) {
     row.currency,
     amount,
     typeof amount === 'number' ? amount.toFixed(2) : amount,
-    formatMoney(row.amount, row.currency)
+    outstanding,
+    typeof outstanding === 'number' ? outstanding.toFixed(2) : outstanding,
+    credited,
+    formatMoney(row.amount, row.currency),
+    formatMoney(row.outstandingAmount, row.currency)
   ].join(' ').toLowerCase();
   return haystack.includes(query);
 }

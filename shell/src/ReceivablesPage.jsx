@@ -323,8 +323,19 @@ export default function ReceivablesPage({ navigate }) {
                         <td>{row.installmentNumber}</td>
                         <td className="eia-nowrap">{row.dueDate || '—'}</td>
                         <td className="eia-nowrap">
-                          {formatMoney(row.amount, row.currency)}
+                          {formatMoney(
+                            row.outstandingAmount === null ? row.amount : row.outstandingAmount,
+                            row.currency
+                          )}
                           <span className="eia-muted" style={{ marginLeft: 6, fontSize: 10 }}>{row.currency}</span>
+                          {row.creditedAmount > 0 && (
+                            <span
+                              className="eia-credited-amount"
+                              data-testid={`receivable-credited-${row.id}`}
+                            >
+                              credited {formatMoney(row.creditedAmount, row.currency)}
+                            </span>
+                          )}
                         </td>
                         <td><span className={`eia-pill ${statusTone(row.effectiveStatus)}`}>{row.effectiveStatus}</span></td>
                         <td>{row.daysPastDue > 0 ? row.daysPastDue : <span className="eia-muted">—</span>}</td>
@@ -445,10 +456,13 @@ export default function ReceivablesPage({ navigate }) {
         <p>
           Premium collection is owned by Policy billing, not by the shell. An installment stays in this queue until it is paid,
           waived, or cancelled. It is overdue when billing marks it OVERDUE or its due date has passed; upcoming rows are due.
-          When the billing read includes a summary, those amounts and counts are shown; otherwise they are calculated from the
-          loaded installment rows. Filters match policy number, insurer, amount, currency, status, and due date, and only open
-          installments are listed. Sending dunning records a collection communication against one installment; it does not change
-          the installment status, amount, or payment. A duplicate level for the same installment is rejected as a conflict.
+          Amounts show the net outstanding balance after applied credit notes, with the credited amount shown beneath when it is
+          positive. Queue totals sum that outstanding balance rather than the scheduled amount, so credits cannot overstate the
+          collection queue. When the billing read includes a summary, those amounts and counts are shown; otherwise they are
+          calculated from the loaded installment rows. Filters match policy number, insurer, amount, currency, status, and due
+          date, and only open installments are listed. Sending dunning records a collection communication against one
+          installment; it does not change the installment status, amount, or payment. A duplicate level for the same installment
+          is rejected as a conflict.
         </p>
       </div>
     </div>

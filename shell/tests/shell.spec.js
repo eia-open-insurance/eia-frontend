@@ -406,6 +406,120 @@ test('premium receivables uses the billing summary when present', async ({ page 
   await expect(page.getByRole('button', { name: 'Due premium', exact: true })).toContainText('$8,400.00');
 });
 
+test('premium receivables shows net outstanding and credited amounts', async ({ page }) => {
+  const payload = {
+    items: [
+      {
+        installmentId: 'installment-1',
+        policyId: 'policy-1',
+        policyNumber: 'POL-2026-0000001',
+        insurerName: 'Acme Insurance',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(-12),
+        amount: '12500.0000',
+        creditedAmount: '2500.0000',
+        outstandingAmount: '10000.0000',
+        currency: 'USD',
+        status: 'DUE'
+      },
+      {
+        installmentId: 'installment-2',
+        policyId: 'policy-2',
+        policyNumber: 'POL-2026-0000002',
+        insurerName: 'Northwind Mutual',
+        installmentNumber: 2,
+        dueDate: localIsoOffset(9),
+        amount: '8400.0000',
+        creditedAmount: '400.0000',
+        currency: 'USD',
+        status: 'DUE'
+      },
+      {
+        installmentId: 'installment-3',
+        policyId: 'policy-3',
+        policyNumber: 'POL-2026-0000003',
+        insurerName: 'Sentinel Specialty',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(30),
+        amount: '3000.0000',
+        outstandingAmount: '2500.0000',
+        currency: 'USD',
+        status: 'OVERDUE'
+      }
+    ]
+  };
+  await mockReceivables(page, payload);
+  await page.goto('/receivables');
+
+  await expect(page.getByRole('button', { name: 'Overdue premium', exact: true }))
+    .toContainText('$12,500.00');
+  await expect(page.getByRole('button', { name: 'Due premium', exact: true }))
+    .toContainText('$8,000.00');
+
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  const creditedRow = table.getByRole('row', { name: /POL-2026-0000001/ });
+  await expect(creditedRow).toContainText('$10,000.00');
+  await expect(page.getByTestId('receivable-credited-installment-1'))
+    .toHaveText('credited $2,500.00');
+
+  const fallbackRow = table.getByRole('row', { name: /POL-2026-0000002/ });
+  await expect(fallbackRow).toContainText('$8,000.00');
+  await expect(page.getByTestId('receivable-credited-installment-2'))
+    .toHaveText('credited $400.00');
+
+  const outstandingRow = table.getByRole('row', { name: /POL-2026-0000003/ });
+  await expect(outstandingRow).toContainText('$2,500.00');
+  await expect(page.getByTestId('receivable-credited-installment-3')).toHaveCount(0);
+
+  const filter = page.getByRole('searchbox', { name: 'Filter premium receivables' });
+  await filter.fill('8000');
+  await expect(table.getByRole('link', { name: 'POL-2026-0000002' })).toBeVisible();
+  await expect(table.getByRole('link', { name: 'POL-2026-0000001' })).toHaveCount(0);
+});
+
+test('premium receivables recomputes net queue totals when credits make the summary gross', async ({ page }) => {
+  const payload = receivablesFixture();
+  payload.totalAmount = '23900.0000';
+  payload.overdueAmount = '15500.0000';
+  payload.items[0].creditedAmount = '2500.0000';
+  payload.items[0].outstandingAmount = '10000.0000';
+  payload.items[1].creditedAmount = '400.0000';
+  await mockReceivables(page, payload);
+  await page.goto('/receivables');
+
+  // Gross summary was 15,500 overdue / 23,900 total. Net outstanding is
+  // 10,000 + 3,000 overdue and 8,400 - 400 due.
+  await expect(page.getByRole('button', { name: 'Overdue premium', exact: true }))
+    .toContainText('$13,000.00');
+  await expect(page.getByRole('button', { name: 'Due premium', exact: true }))
+    .toContainText('$8,000.00');
+
+  await page.goto('/');
+  const dashboardCard = page.getByRole('button', { name: 'Premium receivables' });
+  await expect(dashboardCard.locator('.eia-receivables-amount')).toHaveText('$13,000.00');
+  await expect(dashboardCard.locator('.eia-metric').first()).toHaveText('2');
+});
+
+test('premium receivables totals use outstandingAmount even without credits', async ({ page }) => {
+  const payload = receivablesFixture();
+  payload.totalAmount = '23900.0000';
+  payload.overdueAmount = '15500.0000';
+  payload.items[0].outstandingAmount = '9000.0000';
+  payload.items[1].outstandingAmount = '7000.0000';
+  await mockReceivables(page, payload);
+  await page.goto('/receivables');
+
+  await expect(page.getByRole('button', { name: 'Overdue premium', exact: true }))
+    .toContainText('$12,000.00');
+  await expect(page.getByRole('button', { name: 'Due premium', exact: true }))
+    .toContainText('$7,000.00');
+
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await expect(table.getByRole('row', { name: /POL-2026-0000001/ })).toContainText('$9,000.00');
+  await expect(table.getByRole('row', { name: /POL-2026-0000002/ })).toContainText('$7,000.00');
+  await expect(page.getByTestId(/^receivable-credited-/)).toHaveCount(0);
+});
+
 test('premium receivables tabs and filters narrow the collection queue', async ({ page }) => {
   await mockReceivables(page);
   await page.goto('/receivables');
