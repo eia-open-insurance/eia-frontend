@@ -16,6 +16,16 @@ const routes = [
 test.describe('live federated verticals', () => {
   test.skip(!process.env.EIA_LIVE, 'Set EIA_LIVE=1 with the full local stack running.');
 
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    if (await page.evaluate(() => window.__EIA_AUTH_ENABLED__ === true)) {
+      await page.getByLabel('Username').fill('adjuster');
+      await page.getByLabel('Password').fill('password');
+      await page.getByRole('button', { name: /Sign in/i }).click();
+      await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 20000 });
+    }
+  });
+
   test('dashboard loads the live event stream', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible();
