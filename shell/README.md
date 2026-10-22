@@ -97,6 +97,21 @@ and XHR, the `invalid_grant` error without a fallback loop, 401 refresh-and-retr
 bearer, single-flight refresh for concurrent 401s, read-only refresh retention, refresh failure and
 retry exhaustion clearing the session, the XHR upload 401 path, and the disabled default.
 
+## Recent records
+
+Opening a search result records it in `localStorage` under `eia.recent.records.v1` as
+`{id, type, label, secondary, status, href, ts}`. When the global search query is empty, the
+palette shows the eight most recent records (type and status included) above the create actions;
+`/search` shows the same section on its empty landing state. Clicking either reopens the record
+and moves it to the front. Entries are deduplicated by `type` + `id` and capped at eight, and
+malformed or non-array storage degrades to an empty list instead of breaking search. Both
+surfaces offer **Clear recent** and show an empty state when no records are stored. `logout()`
+removes the list so a shared workstation does not retain the previous operator's history.
+
+`npx playwright test tests/recent-records.spec.js` covers saving, deduplication, the eight-record
+cap, the palette and `/search` sections, clearing, and malformed storage; `tests/auth.spec.js`
+covers the logout clear.
+
 ## Operations dashboard
 
 The default dashboard route renders the platform metrics and an “Event stream” card. The card

@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Highlight from './Highlight.jsx';
 import {
+  clearRecentRecords,
+  listRecentRecords,
+  recentRecordKey,
+  saveRecentRecord
+} from './recentRecords.js';
+import {
   CREATE_ACTIONS,
   SAVED_KEY,
   VERTICALS,
@@ -26,6 +32,7 @@ export default function SearchPage({ navigate }) {
   const [type, setType] = useState('ALL');
   const [status, setStatus] = useState('ALL');
   const [saved, setSaved] = useState(() => readList(SAVED_KEY));
+  const [recent, setRecent] = useState(listRecentRecords);
   const abortRef = useRef(null);
 
   useEffect(() => {
@@ -115,6 +122,20 @@ export default function SearchPage({ navigate }) {
     setStatus(item.status || 'ALL');
     window.history.replaceState({}, '', `/search?q=${encodeURIComponent(item.q)}`);
   };
+
+  const openRecord = (item) => {
+    setRecent(saveRecentRecord({
+      id: item.id,
+      type: item.type,
+      label: item.label,
+      secondary: item.secondary,
+      status: item.status,
+      href: item.href
+    }));
+    navigate(cleanHref(item.href));
+  };
+
+  const clearRecent = () => setRecent(clearRecentRecords());
 
   return (
     <div>
@@ -208,6 +229,36 @@ export default function SearchPage({ navigate }) {
             <div className="eia-search-landing">
               <h2>Start with a number or a name</h2>
               <p>Search across claims, policies, parties, contracts, cessions, retrocessions, documents, payments, and notifications. Results respect the direct/assumed book wall.</p>
+
+              <section className="eia-recent-records" aria-label="Recent records">
+                <div className="eia-recent-head">
+                  <h3>Recent records</h3>
+                  {recent.length > 0 && (
+                    <button type="button" onClick={clearRecent}>Clear recent</button>
+                  )}
+                </div>
+                {recent.length === 0 ? (
+                  <div className="eia-recent-empty">
+                    No recent records yet. Records you open from search appear here.
+                  </div>
+                ) : (
+                  <div className="eia-recent-list">
+                    {recent.map((item) => (
+                      <button
+                        key={recentRecordKey(item)}
+                        type="button"
+                        className="eia-recent-row"
+                        onClick={() => openRecord(item)}
+                      >
+                        <span className="eia-search-type">{item.type || 'RECORD'}</span>
+                        <span className="eia-search-main"><b>{item.label}</b><small>{item.secondary}</small></span>
+                        {item.status && <span className="eia-search-status">{item.status}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+
               <div className="eia-search-create-grid">
                 {CREATE_ACTIONS.slice(0, 6).map((action) => (
                   <button key={action.path} type="button" className="eia-search-create" onClick={() => navigate(`${action.path}?new=1`)}>
@@ -240,7 +291,7 @@ export default function SearchPage({ navigate }) {
                 <span>Record</span><span>Context</span><span>Status</span><span />
               </div>
               {visible.map((item) => (
-                <button key={`${item.verticalPath}-${item.id || item.href}`} type="button" className="eia-search-row" onClick={() => navigate(cleanHref(item.href))}>
+                <button key={`${item.verticalPath}-${item.id || item.href}`} type="button" className="eia-search-row" onClick={() => openRecord(item)}>
                   <span className="record">
                     <span className="eia-search-type">{item.type}</span>
                     <b><Highlight text={item.label} term={submitted} /></b>

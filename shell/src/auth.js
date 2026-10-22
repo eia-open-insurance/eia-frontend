@@ -23,6 +23,8 @@
 // refresh token is exchanged for a new access token. Concurrent 401s share one
 // refresh round-trip; a failed refresh clears the session and reloads to login.
 
+import { clearRecentRecords } from './recentRecords.js';
+
 export const ACCESS_TOKEN_KEY = 'access_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';
 export const READ_ONLY_KEY = 'read_only';
@@ -284,6 +286,9 @@ export function clearTokens() {
 /** Clear the session and reload, which returns an enabled shell to its login page. */
 export function logout() {
   clearTokens();
+  // Recent records are a session artefact: do not leave one operator's
+  // history for the next sign-in on a shared workstation.
+  clearRecentRecords();
   if (typeof window !== 'undefined') window.location.reload();
 }
 

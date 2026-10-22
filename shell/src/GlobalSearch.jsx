@@ -1,26 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Highlight from './Highlight.jsx';
 import {
+  clearRecentRecords,
+  listRecentRecords,
+  recentRecordKey,
+  saveRecentRecord
+} from './recentRecords.js';
+import {
   CREATE_ACTIONS,
-  RECENT_KEY,
   VERTICALS,
   cleanHref,
   enrichPartyClaims,
   enrichPartyPolicies,
-  readList,
-  searchVertical,
-  sortMatches,
-  writeList
+  searchVertical
 } from './searchConfig.js';
-
-function readRecent() {
-  return readList(RECENT_KEY).slice(0, 6);
-}
-
-function writeRecent(item) {
-  const next = [item, ...readRecent().filter((x) => x.href !== item.href)].slice(0, 6);
-  writeList(RECENT_KEY, next);
-}
 
 export default function GlobalSearch({ navigate }) {
   const [query, setQuery] = useState('');
@@ -28,17 +21,19 @@ export default function GlobalSearch({ navigate }) {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [recent, setRecent] = useState(readRecent);
+  const [recent, setRecent] = useState(listRecentRecords);
   const rootRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
 
   const flat = groups.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })));
+  const emptyQuery = query.trim().length === 0;
 
   useEffect(() => {
     const onKey = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        setRecent(listRecentRecords());
         inputRef.current?.focus();
         setOpen(true);
       }
@@ -86,11 +81,26 @@ export default function GlobalSearch({ navigate }) {
   }, [query]);
 
   const choose = (item) => {
-    writeRecent({ label: item.label, secondary: item.secondary, href: item.href, type: item.type });
-    setRecent(readRecent());
+    setRecent(saveRecentRecord({
+      id: item.id,
+      type: item.type,
+      label: item.label,
+      secondary: item.secondary,
+      status: item.status,
+      href: item.href
+    }));
     setOpen(false);
     setQuery('');
     navigate(cleanHref(item.href));
+  };
+
+  const clearRecent = () => setRecent(clearRecentRecords());
+
+  const openPalette = () => {
+    // Re-read storage when the palette opens so a record saved in the /search
+    // page or another tab is visible without a reload.
+    setRecent(listRecentRecords());
+    setOpen(true);
   };
 
   const create = (path) => {
@@ -125,7 +135,7 @@ export default function GlobalSearch({ navigate }) {
           type="search"
           value={query}
           onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onFocus={openPalette}
           onKeyDown={onInputKeyDown}
           placeholder="Search claims, policies, parties, contracts, payments…"
           aria-label="Search all records"
@@ -138,6 +148,32 @@ export default function GlobalSearch({ navigate }) {
         <div className="eia-search-panel" role="dialog" aria-label="Search results">
           {query.trim().length < 2 && (
             <div className="eia-search-start">
+              {emptyQuery && (
+                <>
+                  <div className="eia-search-group-title">
+                    <span>Recent records</span>
+                    {recent.length > 0 && (
+                      <button type="button" onClick={clearRecent}>Clear recent</button>
+                    )}
+                  </div>
+                  {recent.length === 0 ? (
+                    <div className="eia-search-recent-empty">
+                      No recent records yet. Records you open from search appear here.
+                    </div>
+                  ) : recent.map((item) => (
+                    <button
+                      key={recentRecordKey(item)}
+                      type="button"
+                      className="eia-search-result"
+                      onClick={() => choose(item)}
+                    >
+                      <span className="eia-search-type">{item.type || 'RECORD'}</span>
+                      <span className="eia-search-main"><b>{item.label}</b><small>{item.secondary}</small></span>
+                      {item.status && <span className="eia-search-status">{item.status}</span>}
+                    </button>
+                  ))}
+                </>
+              )}
               <div className="eia-search-group-title">Create a record</div>
               <div className="eia-search-create-grid">
                 {CREATE_ACTIONS.map((action) => (
@@ -147,17 +183,6 @@ export default function GlobalSearch({ navigate }) {
                   </button>
                 ))}
               </div>
-              {recent.length > 0 && (
-                <>
-                  <div className="eia-search-group-title">Recent</div>
-                  {recent.map((item) => (
-                    <button key={item.href} type="button" className="eia-search-result" onClick={() => choose(item)}>
-                      <span className="eia-search-type">{item.type || 'RECORD'}</span>
-                      <span className="eia-search-main"><b><Highlight text={item.label} term={query} /></b><small><Highlight text={item.secondary} term={query} /></small></span>
-                    </button>
-                  ))}
-                </>
-              )}
             </div>
           )}
 

@@ -545,6 +545,35 @@ test('logout clears the read-only flag', async ({ page }) => {
   ).toEqual({ access: null, refresh: null, readOnly: null });
 });
 
+test('logout clears recent records from localStorage', async ({ page }) => {
+  await enableAuth(page);
+  await mockApi(page);
+  await mockTokenEndpoint(page);
+
+  await page.goto('/');
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  // Seed after the page has loaded: an init script would re-seed the storage
+  // during the logout reload and mask a missing clear.
+  await page.evaluate(() => {
+    window.localStorage.setItem('eia.recent.records.v1', JSON.stringify([{
+      id: 'party-1',
+      type: 'PARTY',
+      label: 'PTY-000000001',
+      secondary: 'Acme Manufacturing',
+      status: 'ACTIVE',
+      href: '/party?record=party-1',
+      ts: Date.now()
+    }]));
+  });
+  expect(await page.evaluate(() => window.localStorage.getItem('eia.recent.records.v1'))).not.toBeNull();
+
+  await page.getByRole('button', { name: 'Logout' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in to EIA Open Insurance' })).toBeVisible();
+  expect(await page.evaluate(() => window.localStorage.getItem('eia.recent.records.v1'))).toBeNull();
+});
+
 test('a failed refresh clears the session and reloads to sign-in once', async ({ page }) => {
   await enableAuth(page);
   const api = await mockApi(page, { status: 401, body: { error: 'invalid_token' } });

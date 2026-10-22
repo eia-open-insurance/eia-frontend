@@ -733,6 +733,7 @@ main [role="status"] {
   font-size: 12px;
 }
 .eia-search-empty strong { color: var(--eia-navy); font-size: 13px; }
+.eia-search-recent-empty { padding: 2px 14px 10px; color: var(--eia-muted); font-size: 11px; }
 
 .eia-search-footer {
   display: flex;
@@ -958,6 +959,29 @@ main [role="status"] {
 .eia-search-landing { background: #fff; border: 1px solid var(--eia-line); border-radius: 8px; padding: 28px; }
 .eia-search-landing h2 { margin: 0 0 6px !important; color: var(--eia-navy); font-size: 18px !important; }
 .eia-search-landing p { max-width: 680px; font-size: 13px; line-height: 1.55; margin: 0 0 14px; }
+
+.eia-recent-records { margin: 0 0 18px; }
+.eia-recent-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.eia-recent-head h3 { margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #6b7f92; }
+.eia-recent-head button { background: transparent !important; border: 0 !important; color: var(--eia-blue) !important; padding: 2px 0 !important; font-size: 11px !important; font-weight: 600 !important; }
+.eia-recent-head button:hover { text-decoration: underline; }
+.eia-recent-list { border: 1px solid var(--eia-line); border-radius: 6px; overflow: hidden; background: #fff; }
+.eia-recent-row {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+  background: #fff !important;
+  border: 0 !important;
+  border-bottom: 1px solid #edf1f5 !important;
+  border-radius: 0 !important;
+  color: var(--eia-ink) !important;
+}
+.eia-recent-row:last-child { border-bottom: 0 !important; }
+.eia-recent-row:hover { background: #eef5fb !important; }
+.eia-recent-empty { border: 1px dashed #d7e0e9; border-radius: 6px; padding: 12px 14px; color: var(--eia-muted); font-size: 12px; }
 
 .eia-search-results { background: #fff; border: 1px solid var(--eia-line); border-radius: 8px; overflow: hidden; }
 .eia-search-results-head,
