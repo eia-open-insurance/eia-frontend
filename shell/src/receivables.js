@@ -195,6 +195,13 @@ export function composeNoticeHref(row, options = {}) {
   ];
   const recipient = text(source.insuredPartyId);
   if (recipient) pairs.push(['recipientPartyId', recipient]);
+  const sourcePolicyId = text(source.policyId);
+  if (sourcePolicyId) {
+    pairs.push(['sourceType', 'POLICY']);
+    pairs.push(['sourceId', sourcePolicyId]);
+    const sourceReference = text(source.policyNumber);
+    if (sourceReference) pairs.push(['sourceReference', sourceReference]);
+  }
   pairs.push(['templateCode', DUNNING_NOTICE_TEMPLATE]);
   pairs.push(['subject', dunningNoticeSubject(source)]);
   pairs.push(['body', dunningNoticeBody(source)]);
