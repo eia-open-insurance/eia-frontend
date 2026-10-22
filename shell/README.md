@@ -63,14 +63,21 @@ enabled config as a static asset.
 When enabled, `AuthGate` renders `LoginPage` until a token is present. `src/auth.js` implements:
 
 - `login(username, password)` posts `grant_type=password` to `/auth/oauth2/token` with
-  `Basic base64(eia-shell:shell-secret)` and the scope `openid profile eia.read eia.write`,
+  `Basic base64(eia-shell:shell-secret)` and the scope `profile eia.read eia.write`,
   then stores the response's `access_token` / `refresh_token` in `sessionStorage`.
+  A read-only identity (the local `auditor`) is refused `eia.write` with `invalid_scope`;
+  the shell retries once with `profile eia.read` and stores `read_only=true`. Any other
+  error (for example `invalid_grant` for a wrong password) is surfaced without a retry.
 - `getToken()`, `getRefreshToken()`, `isAuthenticated()`, `getExpiry()` (epoch milliseconds from
   the JWT `exp`) and `getUsername()` (JWT `sub`).
-- `logout()` clears both keys and reloads.
+- `getReadOnly()` and `canWrite()`. A read-only session renders a persistent
+  “Read-only access. Changes are not permitted.” banner and a `READ ONLY` header badge.
+- `logout()` clears the token and read-only keys and reloads.
 - `refreshAccessToken()` posts `grant_type=refresh_token` with the stored refresh token and the
-  same Basic client authentication, then stores the new access/refresh tokens. Concurrent callers
-  share one in-flight refresh (single-flight), so a burst of 401s sends one token request.
+  same Basic client authentication, then stores the new access/refresh tokens. A read-only
+  session also sends `scope=profile eia.read`, so the refreshed token cannot gain write access.
+  Concurrent callers share one in-flight refresh (single-flight), so a burst of 401s sends one
+  token request.
 - A `window.fetch` wrapper adds `Authorization: Bearer` to same-origin `/api` requests. On a 401
   it refreshes (unless another request already refreshed the token), retries the request once with
   the new bearer, and clears the session plus reloads to login if the refresh or the retry fails.
@@ -79,14 +86,16 @@ When enabled, `AuthGate` renders `LoginPage` until a token is present. `src/auth
   caller does not set `Authorization` itself. XHR bodies are not replayed: a 401 clears the session
   and reloads to login without a retry.
 
-The local demo user is `adjuster` / `password`; the login card shows that hint. The password grant
-and bundled `eia-shell` secret are for the local/demo stack only. A production identity integration
-should use authorization-code + PKCE instead.
+The local demo users are `adjuster` / `password` (write access) and `auditor` / `password`
+(read-only); the login card shows the hint. The password grant and bundled `eia-shell` secret are
+for the local/demo stack only. A production identity integration should use authorization-code +
+PKCE instead.
 
 `npx playwright test tests/auth.spec.js` covers the enabled login/logout flow (including the write
-scope), bearer injection for fetch and XHR, the `invalid_grant` error, 401 refresh-and-retry with
-the new bearer, single-flight refresh for concurrent 401s, refresh failure and retry exhaustion
-clearing the session, the XHR upload 401 path, and the disabled default.
+scope), the auditor `invalid_scope` fallback with the read-only banner, bearer injection for fetch
+and XHR, the `invalid_grant` error without a fallback loop, 401 refresh-and-retry with the new
+bearer, single-flight refresh for concurrent 401s, read-only refresh retention, refresh failure and
+retry exhaustion clearing the session, the XHR upload 401 path, and the disabled default.
 
 ## Operations dashboard
 

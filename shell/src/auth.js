@@ -11,7 +11,13 @@
 //   POST /auth/oauth2/token
 //   Authorization: Basic base64(eia-shell:shell-secret)
 //   grant_type=password&username=...&password=...&scope=profile eia.read eia.write
-//   grant_type=refresh_token&refresh_token=...
+//   grant_type=refresh_token&refresh_token=...&scope=profile eia.read (read-only only)
+//
+// A read-only identity (the local `auditor` demo user) is refused `eia.write`
+// with `invalid_scope`; the shell retries the password grant once with
+// `profile eia.read` and marks the session read-only. The flag lives in
+// sessionStorage so it survives reloads, and the refresh grant repeats the
+// narrow scope so a refreshed token cannot gain write access.
 //
 // A same-origin /api request that answers 401 is retried once after the stored
 // refresh token is exchanged for a new access token. Concurrent 401s share one
@@ -19,11 +25,14 @@
 
 export const ACCESS_TOKEN_KEY = 'access_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';
+export const READ_ONLY_KEY = 'read_only';
 
 const TOKEN_PATH = '/auth/oauth2/token';
 const CLIENT_ID = 'eia-shell';
 const CLIENT_SECRET = 'shell-secret';
 const SCOPE = 'profile eia.read eia.write';
+const READ_ONLY_SCOPE = 'profile eia.read';
+const WRITE_SCOPE = 'eia.write';
 
 const nativeFetch = typeof window !== 'undefined' ? window.fetch.bind(window) : null;
 
@@ -78,6 +87,16 @@ export function getToken() {
 /** Stored refresh token, or null. */
 export function getRefreshToken() {
   return storageGet(REFRESH_TOKEN_KEY);
+}
+
+/** True when the stored session was granted read-only access. */
+export function getReadOnly() {
+  return storageGet(READ_ONLY_KEY) === 'true';
+}
+
+/** True when the session is allowed to perform writes. */
+export function canWrite() {
+  return !getReadOnly();
 }
 
 function decodeJwt(token) {
@@ -155,25 +174,57 @@ async function requestToken(body) {
   return payload;
 }
 
+function grantedScopes(payload) {
+  if (!payload || typeof payload.scope !== 'string') return null;
+  const scopes = payload.scope.split(/\s+/).filter(Boolean);
+  return scopes.length ? scopes : null;
+}
+
+function storeSession(payload, readOnly) {
+  storageSet(ACCESS_TOKEN_KEY, payload.access_token);
+  if (payload.refresh_token) storageSet(REFRESH_TOKEN_KEY, payload.refresh_token);
+  else storageRemove(REFRESH_TOKEN_KEY);
+  if (readOnly) storageSet(READ_ONLY_KEY, 'true');
+  else storageRemove(READ_ONLY_KEY);
+}
+
 /**
  * Exchange credentials for tokens. Stores the access and refresh tokens in
  * sessionStorage and resolves with the token response.
+ *
+ * The first request asks for the write scope. A read-only identity (the local
+ * auditor) is refused with `invalid_scope`; that single error triggers one
+ * retry with `profile eia.read`, and the session is marked read-only. Any
+ * other failure (notably `invalid_grant` for a wrong password) is surfaced
+ * immediately, so a failed sign-in cannot loop.
  *
  * Rejects with an Error carrying `code` (the OAuth `error` value, e.g.
  * `invalid_grant`) and `status` when the endpoint refuses the request.
  */
 export async function login(username, password) {
-  const body = new URLSearchParams();
-  body.set('grant_type', 'password');
-  body.set('username', username);
-  body.set('password', password);
-  body.set('scope', SCOPE);
+  const request = (scope) => {
+    const body = new URLSearchParams();
+    body.set('grant_type', 'password');
+    body.set('username', username);
+    body.set('password', password);
+    body.set('scope', scope);
+    return requestToken(body);
+  };
 
-  const payload = await requestToken(body);
-  storageSet(ACCESS_TOKEN_KEY, payload.access_token);
-  if (payload.refresh_token) storageSet(REFRESH_TOKEN_KEY, payload.refresh_token);
-  else storageRemove(REFRESH_TOKEN_KEY);
+  let payload;
+  try {
+    payload = await request(SCOPE);
+  } catch (error) {
+    if (error.status !== 400 || error.code !== 'invalid_scope') throw error;
+    payload = await request(READ_ONLY_SCOPE);
+    storeSession(payload, true);
+    return payload;
+  }
 
+  // Defensive: if the endpoint silently narrowed the grant, reflect the
+  // narrower session instead of showing write affordances without the scope.
+  const scopes = grantedScopes(payload);
+  storeSession(payload, Boolean(scopes && !scopes.includes(WRITE_SCOPE)));
   return payload;
 }
 
@@ -199,11 +250,22 @@ export function refreshAccessToken() {
     const body = new URLSearchParams();
     body.set('grant_type', 'refresh_token');
     body.set('refresh_token', refreshToken);
+    // A read-only grant must stay read-only: request the same narrow scope so
+    // the refreshed access token cannot gain eia.write.
+    const readOnly = getReadOnly();
+    if (readOnly) body.set('scope', READ_ONLY_SCOPE);
 
     const payload = await requestToken(body);
     storageSet(ACCESS_TOKEN_KEY, payload.access_token);
     // A rotating server may omit refresh_token; keep the current one then.
     if (payload.refresh_token) storageSet(REFRESH_TOKEN_KEY, payload.refresh_token);
+
+    // Preserve read-only across the refresh, and adopt a narrowed grant if the
+    // server ever returns one to an otherwise writable session.
+    const scopes = grantedScopes(payload);
+    const nextReadOnly = readOnly || Boolean(scopes && !scopes.includes(WRITE_SCOPE));
+    if (nextReadOnly) storageSet(READ_ONLY_KEY, 'true');
+    else storageRemove(READ_ONLY_KEY);
     return payload.access_token;
   })();
 
@@ -216,6 +278,7 @@ export function refreshAccessToken() {
 export function clearTokens() {
   storageRemove(ACCESS_TOKEN_KEY);
   storageRemove(REFRESH_TOKEN_KEY);
+  storageRemove(READ_ONLY_KEY);
 }
 
 /** Clear the session and reload, which returns an enabled shell to its login page. */

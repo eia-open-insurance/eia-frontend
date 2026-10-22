@@ -5,7 +5,7 @@ import GlobalSearch from './GlobalSearch.jsx';
 import ReceivablesPage from './ReceivablesPage.jsx';
 import SearchPage from './SearchPage.jsx';
 import WorkPage from './WorkPage.jsx';
-import { getUsername, isAuthEnabled, logout } from './auth.js';
+import { getReadOnly, getUsername, isAuthEnabled, logout } from './auth.js';
 
 const remotes = [
   { path: 'dashboard', label: 'Dashboard', component: Dashboard },
@@ -34,6 +34,7 @@ export default function App() {
   const [routeKey, setRouteKey] = useState(0);
   const authEnabled = isAuthEnabled();
   const username = authEnabled ? getUsername() : null;
+  const readOnly = authEnabled && getReadOnly();
   const initials = String(username || 'EIA').slice(0, 2).toUpperCase();
 
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function App() {
         <div className={authEnabled ? 'eia-user eia-user-auth' : 'eia-user'}>
           {authEnabled ? (
             <>
+              {readOnly ? <span className="eia-readonly-badge">READ ONLY</span> : null}
               <span className="eia-avatar" aria-hidden="true">{initials}</span>
               <span className="eia-user-name">{username || 'Signed in'}</span>
               <button type="button" className="eia-logout" onClick={logout}>Logout</button>
@@ -94,12 +96,18 @@ export default function App() {
         </div>
       </header>
 
+      {readOnly ? (
+        <div className="eia-readonly-banner" role="status">
+          Read-only access. Changes are not permitted.
+        </div>
+      ) : null}
+
       <div className="eia-searchstrip">
         <GlobalSearch navigate={navigate} />
         <div className="eia-search-context">
           <span>Tenant <b>Meridian Specialty</b></span>
           <span>Book <b>Direct + Assumed</b></span>
-          <span>Role <b>Claims Adjuster</b></span>
+          <span>Role <b>{readOnly ? 'Auditor' : 'Claims Adjuster'}</b></span>
           <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
         </div>
       </div>

@@ -46,7 +46,7 @@ export default function LoginPage({ onAuthenticated }) {
 
         <div className="eia-auth-card">
           <h1>Sign in to EIA Open Insurance</h1>
-          <p className="eia-auth-lede">Use your adjuster credentials to open the operations workspace.</p>
+          <p className="eia-auth-lede">Use your operations credentials to open the workspace.</p>
 
           {error ? (
             <div className="eia-auth-error" role="alert">
@@ -93,6 +93,8 @@ export default function LoginPage({ onAuthenticated }) {
 
           <p className="eia-auth-hint">
             Local demo: <b>adjuster</b> / <b>password</b>
+            <br />
+            Auditor (read-only): <b>auditor</b> / <b>password</b>
           </p>
         </div>
 

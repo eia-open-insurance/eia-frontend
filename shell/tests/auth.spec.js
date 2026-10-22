@@ -4,14 +4,14 @@ function base64url(value) {
   return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
 
-function mockJwt(sub = 'adjuster', expiresInSeconds = 3600) {
+function mockJwt(sub = 'adjuster', expiresInSeconds = 3600, scope = 'profile eia.read eia.write') {
   const header = base64url({ alg: 'none', typ: 'JWT' });
   const payload = base64url({
     sub,
     iss: 'http://localhost:3000/auth',
     aud: 'eia-shell',
     exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
-    scope: 'profile eia.read eia.write'
+    scope
   });
   return `${header}.${payload}.signature`;
 }
@@ -72,8 +72,12 @@ async function mockApi(page, options = {}) {
   return state;
 }
 
+function tokenRequestBody(request) {
+  return new URLSearchParams(request.postData() || '');
+}
+
 function isRefreshRequest(request) {
-  return new URLSearchParams(request.postData() || '').get('grant_type') === 'refresh_token';
+  return tokenRequestBody(request).get('grant_type') === 'refresh_token';
 }
 
 async function mockTokenEndpoint(page, options = {}) {
@@ -82,7 +86,9 @@ async function mockTokenEndpoint(page, options = {}) {
     const request = route.request();
     state.request = request;
     state.requests.push(request);
-    const refresh = isRefreshRequest(request);
+    const body = tokenRequestBody(request);
+    const refresh = body.get('grant_type') === 'refresh_token';
+    const scope = body.get('scope');
     const failureStatus = refresh ? options.refreshStatus : options.status;
 
     if (failureStatus) {
@@ -96,7 +102,27 @@ async function mockTokenEndpoint(page, options = {}) {
       return;
     }
 
-    const accessToken = refresh ? options.refreshedToken || mockJwt('adjuster') : state.token;
+    // The local auditor identity is refused eia.write. The shell must retry
+    // with the read scope instead of looping on the write-scope request.
+    if (
+      !refresh &&
+      options.rejectWriteScope &&
+      String(scope || '').split(/\s+/).includes('eia.write')
+    ) {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'invalid_scope',
+          error_description: 'Invalid scope: eia.write'
+        })
+      });
+      return;
+    }
+
+    const accessToken = refresh
+      ? options.refreshedToken || mockJwt('adjuster', 3600, scope || 'profile eia.read eia.write')
+      : state.token;
     const refreshToken = refresh
       ? options.refreshedRefreshToken === undefined
         ? 'refresh-token-2'
@@ -113,7 +139,7 @@ async function mockTokenEndpoint(page, options = {}) {
         refresh_token: refreshToken,
         token_type: 'Bearer',
         expires_in: 3600,
-        scope: 'profile eia.read eia.write'
+        scope: scope || 'profile eia.read eia.write'
       })
     });
   });
@@ -145,10 +171,15 @@ test('enabled auth requires sign-in and stores the returned tokens', async ({ pa
 
   const stored = await page.evaluate(() => ({
     access: sessionStorage.getItem('access_token'),
-    refresh: sessionStorage.getItem('refresh_token')
+    refresh: sessionStorage.getItem('refresh_token'),
+    readOnly: sessionStorage.getItem('read_only')
   }));
   expect(stored.access).toBe(endpoint.token);
   expect(stored.refresh).toBe('refresh-token');
+  // An adjuster keeps write access: no read-only flag, banner, or badge.
+  expect(stored.readOnly).toBeNull();
+  await expect(page.locator('.eia-readonly-banner')).toHaveCount(0);
+  await expect(page.locator('.eia-readonly-badge')).toHaveCount(0);
 
   const request = endpoint.request;
   expect(request.method()).toBe('POST');
@@ -161,6 +192,46 @@ test('enabled auth requires sign-in and stores the returned tokens', async ({ pa
   expect(body.get('username')).toBe('adjuster');
   expect(body.get('password')).toBe('password');
   expect(body.get('scope')).toBe('profile eia.read eia.write');
+});
+
+test('an auditor falls back to read-only scope and keeps a persistent banner', async ({ page }) => {
+  await enableAuth(page);
+  await mockApi(page);
+  const endpoint = await mockTokenEndpoint(page, {
+    rejectWriteScope: true,
+    token: mockJwt('auditor', 3600, 'profile eia.read')
+  });
+
+  await page.goto('/');
+  await signIn(page, 'auditor', 'password');
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  const banner = page.locator('.eia-readonly-banner');
+  await expect(banner).toHaveText('Read-only access. Changes are not permitted.');
+  await expect(page.locator('.eia-readonly-badge')).toHaveText('READ ONLY');
+
+  // The write scope is refused once, then the read-only scope succeeds.
+  const bodies = endpoint.requests.map((request) => tokenRequestBody(request));
+  expect(bodies).toHaveLength(2);
+  expect(bodies.map((body) => body.get('scope'))).toEqual([
+    'profile eia.read eia.write',
+    'profile eia.read'
+  ]);
+  expect(bodies.every((body) => body.get('username') === 'auditor')).toBe(true);
+
+  expect(
+    await page.evaluate(() => ({
+      access: sessionStorage.getItem('access_token'),
+      refresh: sessionStorage.getItem('refresh_token'),
+      readOnly: sessionStorage.getItem('read_only')
+    }))
+  ).toEqual({ access: endpoint.token, refresh: 'refresh-token', readOnly: 'true' });
+
+  // The read-only flag lives in sessionStorage, so a reload keeps the banner.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+  await expect(banner).toBeVisible();
+  await expect(page.locator('.eia-readonly-badge')).toHaveText('READ ONLY');
 });
 
 test('same-origin API requests through fetch and XHR carry the bearer token', async ({ page }) => {
@@ -243,6 +314,8 @@ test('a 401 refreshes the token and retries the request with the new bearer', as
   const refreshBody = new URLSearchParams(refreshRequests[0].postData());
   expect(refreshBody.get('grant_type')).toBe('refresh_token');
   expect(refreshBody.get('refresh_token')).toBe('refresh-token');
+  // A writable adjuster refresh keeps its original grant: no narrowing scope.
+  expect(refreshBody.get('scope')).toBeNull();
 
   expect(
     await page.evaluate(() => ({
@@ -250,6 +323,60 @@ test('a 401 refreshes the token and retries the request with the new bearer', as
       refresh: sessionStorage.getItem('refresh_token')
     }))
   ).toEqual({ access: refreshedToken, refresh: 'refresh-token-2' });
+});
+
+test('a read-only session refresh keeps the read-only scope and banner', async ({ page }) => {
+  await enableAuth(page);
+  const refreshedToken = mockJwt('auditor-refreshed', 7200, 'profile eia.read');
+  const api = await mockApi(page, {
+    handler: (request) => {
+      if (!request.url().includes('/api/v1/readonly-refresh-check')) {
+        return { status: 200, body: [] };
+      }
+      return request.headers()['authorization'] === `Bearer ${refreshedToken}`
+        ? { status: 200, body: { refreshed: true } }
+        : { status: 401, body: { error: 'invalid_token' } };
+    }
+  });
+  const endpoint = await mockTokenEndpoint(page, {
+    rejectWriteScope: true,
+    token: mockJwt('auditor', 3600, 'profile eia.read'),
+    refreshedToken
+  });
+
+  await page.goto('/');
+  await signIn(page, 'auditor', 'password');
+  await expect(page.locator('.eia-readonly-banner')).toBeVisible({ timeout: 15000 });
+
+  const result = await page.evaluate(() =>
+    fetch('/api/v1/readonly-refresh-check').then(async (response) => ({
+      status: response.status,
+      body: await response.json()
+    }))
+  );
+  expect(result).toEqual({ status: 200, body: { refreshed: true } });
+  expect(
+    api.requests.filter((request) => request.url.endsWith('/api/v1/readonly-refresh-check'))
+  ).toHaveLength(2);
+
+  // The refresh repeats the narrow scope, so the new token cannot gain writes.
+  const refreshRequests = endpoint.requests.filter(isRefreshRequest);
+  expect(refreshRequests).toHaveLength(1);
+  expect(tokenRequestBody(refreshRequests[0]).get('scope')).toBe('profile eia.read');
+
+  expect(
+    await page.evaluate(() => ({
+      access: sessionStorage.getItem('access_token'),
+      refresh: sessionStorage.getItem('refresh_token'),
+      readOnly: sessionStorage.getItem('read_only')
+    }))
+  ).toEqual({ access: refreshedToken, refresh: 'refresh-token-2', readOnly: 'true' });
+
+  // The banner is still present after the refresh.
+  await expect(page.locator('.eia-readonly-banner')).toHaveText(
+    'Read-only access. Changes are not permitted.'
+  );
+  await expect(page.locator('.eia-readonly-badge')).toHaveText('READ ONLY');
 });
 
 test('concurrent 401s share one refresh round-trip and both retry', async ({ page }) => {
@@ -347,7 +474,7 @@ test('an XHR upload 401 attaches the token, clears the session, and is not retri
 test('invalid credentials surface the invalid_grant error and keep the gate closed', async ({ page }) => {
   await enableAuth(page);
   await mockApi(page);
-  await mockTokenEndpoint(page, {
+  const endpoint = await mockTokenEndpoint(page, {
     status: 400,
     body: { error: 'invalid_grant', error_description: 'Bad credentials' }
   });
@@ -361,9 +488,15 @@ test('invalid credentials surface the invalid_grant error and keep the gate clos
   expect(
     await page.evaluate(() => ({
       access: sessionStorage.getItem('access_token'),
-      refresh: sessionStorage.getItem('refresh_token')
+      refresh: sessionStorage.getItem('refresh_token'),
+      readOnly: sessionStorage.getItem('read_only')
     }))
-  ).toEqual({ access: null, refresh: null });
+  ).toEqual({ access: null, refresh: null, readOnly: null });
+
+  // invalid_grant is not a scope refusal, so there is no read-only retry.
+  await page.waitForTimeout(300);
+  expect(endpoint.requests).toHaveLength(1);
+  expect(tokenRequestBody(endpoint.requests[0]).get('scope')).toBe('profile eia.read eia.write');
 });
 
 test('logout clears the session and returns to the sign-in page', async ({ page }) => {
@@ -387,6 +520,29 @@ test('logout clears the session and returns to the sign-in page', async ({ page 
       refresh: sessionStorage.getItem('refresh_token')
     }))
   ).toEqual({ access: null, refresh: null });
+});
+
+test('logout clears the read-only flag', async ({ page }) => {
+  await enableAuth(page);
+  await mockApi(page);
+  await mockTokenEndpoint(page, {
+    rejectWriteScope: true,
+    token: mockJwt('auditor', 3600, 'profile eia.read')
+  });
+
+  await page.goto('/');
+  await signIn(page, 'auditor', 'password');
+  await expect(page.locator('.eia-readonly-banner')).toBeVisible({ timeout: 15000 });
+
+  await page.getByRole('button', { name: 'Logout' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in to EIA Open Insurance' })).toBeVisible();
+  expect(
+    await page.evaluate(() => ({
+      access: sessionStorage.getItem('access_token'),
+      refresh: sessionStorage.getItem('refresh_token'),
+      readOnly: sessionStorage.getItem('read_only')
+    }))
+  ).toEqual({ access: null, refresh: null, readOnly: null });
 });
 
 test('a failed refresh clears the session and reloads to sign-in once', async ({ page }) => {

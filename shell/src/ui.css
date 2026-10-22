@@ -118,6 +118,27 @@ body {
 .eia-user .eia-logout:hover { background: rgba(255,255,255,.12); color: #fff; }
 .eia-user .eia-logout:focus-visible { outline: 2px solid #8cc2f0; outline-offset: 2px; }
 
+.eia-readonly-badge {
+  background: #f0b429;
+  color: #3d2a00;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.eia-readonly-banner {
+  background: #fff4d6;
+  border-bottom: 1px solid #e6c46b;
+  color: #6b4b00;
+  padding: 9px 28px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
 .eia-context {
   background: #fff;
   border-bottom: 1px solid var(--eia-line);
@@ -390,6 +411,7 @@ main [role="status"] {
   .eia-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .eia-topbar { gap: 14px; padding: 10px 16px; }
   .eia-brand { min-width: auto; }
+  .eia-readonly-banner { padding: 8px 16px; }
   .eia-context { padding: 8px 16px; gap: 14px; flex-wrap: wrap; }
   .eia-content { padding: 18px 16px 32px; }
   main { padding: 18px 16px 32px !important; }
