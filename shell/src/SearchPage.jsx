@@ -7,16 +7,23 @@ import {
   saveRecentRecord
 } from './recentRecords.js';
 import {
+  SAVED_SEARCHES_LIMIT,
+  deleteSavedSearch,
+  listSavedSearches,
+  saveSavedSearch
+} from './savedSearches.js';
+import {
   CREATE_ACTIONS,
-  SAVED_KEY,
+  LENSES,
   VERTICALS,
   cleanHref,
   enrichPartyClaims,
   enrichPartyPolicies,
-  readList,
+  lensForItem,
+  lensLabel,
+  normalizeLens,
   searchVertical,
-  sortMatches,
-  writeList
+  sortMatches
 } from './searchConfig.js';
 
 function initialTerm() {
@@ -31,7 +38,11 @@ export default function SearchPage({ navigate }) {
   const [failed, setFailed] = useState([]);
   const [type, setType] = useState('ALL');
   const [status, setStatus] = useState('ALL');
-  const [saved, setSaved] = useState(() => readList(SAVED_KEY));
+  const [lens, setLens] = useState('ALL');
+  const [saved, setSaved] = useState(listSavedSearches);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveError, setSaveError] = useState('');
   const [recent, setRecent] = useState(listRecentRecords);
   const abortRef = useRef(null);
 
@@ -40,6 +51,9 @@ export default function SearchPage({ navigate }) {
       const next = initialTerm();
       setTerm(next);
       setSubmitted(next);
+      setLens('ALL');
+      setSaveOpen(false);
+      setSaveError('');
     };
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
@@ -78,14 +92,48 @@ export default function SearchPage({ navigate }) {
     return () => controller.abort();
   }, [submitted]);
 
-  const all = useMemo(() => groups.flatMap((group) => group.items.map((item) => ({ ...item, vertical: group.label, verticalPath: group.path }))), [groups]);
+  const activeLens = LENSES.find((option) => option.id === lens) || LENSES[0];
+  const allItems = useMemo(
+    () => groups.flatMap((group) => group.items.map((item) => ({ ...item, vertical: group.label, verticalPath: group.path }))),
+    [groups]
+  );
+  const lensCounts = useMemo(() => {
+    const counts = { ALL: allItems.length };
+    LENSES.forEach((option) => {
+      if (option.id !== 'ALL') counts[option.id] = 0;
+    });
+    groups.forEach((group) => {
+      group.items.forEach((item) => {
+        const id = lensForItem(item, group);
+        if (id !== 'ALL') counts[id] = (counts[id] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [groups, allItems]);
+
+  // Filter whole groups first, so the record-type facets never offer a type
+  // that the active lens has already excluded.
+  const lensGroups = useMemo(() => {
+    if (lens === 'ALL') return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => lensForItem(item, group) === lens)
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groups, lens]);
+
+  const all = useMemo(
+    () => lensGroups.flatMap((group) => group.items.map((item) => ({ ...item, vertical: group.label, verticalPath: group.path }))),
+    [lensGroups]
+  );
   const statuses = useMemo(() => Array.from(new Set(all.map((item) => item.status).filter(Boolean))).sort(), [all]);
   const visible = useMemo(() => {
     let rows = all;
     if (type !== 'ALL') rows = rows.filter((item) => item.vertical === type);
     if (status !== 'ALL') rows = rows.filter((item) => item.status === status);
     return sortMatches(rows, submitted);
-  }, [all, type, status]);
+  }, [all, type, status, submitted]);
   const counts = useMemo(() => {
     const map = {};
     all.forEach((item) => { map[item.vertical] = (map[item.vertical] || 0) + 1; });
@@ -96,31 +144,60 @@ export default function SearchPage({ navigate }) {
     event?.preventDefault();
     const next = term.trim();
     setSubmitted(next);
+    setLens('ALL');
     setType('ALL');
     setStatus('ALL');
+    setSaveOpen(false);
+    setSaveError('');
     window.history.replaceState({}, '', next ? `/search?q=${encodeURIComponent(next)}` : '/search');
   };
 
-  const save = () => {
+  const chooseLens = (id) => {
+    setLens(normalizeLens(id));
+    setType('ALL');
+    setStatus('ALL');
+  };
+
+  const startSave = () => {
+    setSaveOpen(true);
+    setSaveName('');
+    setSaveError('');
+  };
+
+  const cancelSave = () => {
+    setSaveOpen(false);
+    setSaveName('');
+    setSaveError('');
+  };
+
+  const submitSave = (event) => {
+    event.preventDefault();
     if (!submitted.trim()) return;
-    const item = { q: submitted.trim(), type, status, savedAt: new Date().toISOString() };
-    const next = [item, ...saved.filter((x) => !(x.q === item.q && x.type === item.type && x.status === item.status))].slice(0, 8);
-    setSaved(next);
-    writeList(SAVED_KEY, next);
+    const name = saveName.trim();
+    if (!name) {
+      setSaveError('Enter a name for this search.');
+      return;
+    }
+    setSaved(saveSavedSearch({ name, query: submitted.trim(), lens }));
+    setSaveOpen(false);
+    setSaveName('');
+    setSaveError('');
   };
 
   const removeSaved = (item) => {
-    const next = saved.filter((x) => !(x.q === item.q && x.type === item.type && x.status === item.status));
-    setSaved(next);
-    writeList(SAVED_KEY, next);
+    setSaved(deleteSavedSearch(item.id));
   };
 
   const openSaved = (item) => {
-    setTerm(item.q);
-    setSubmitted(item.q);
-    setType(item.type || 'ALL');
-    setStatus(item.status || 'ALL');
-    window.history.replaceState({}, '', `/search?q=${encodeURIComponent(item.q)}`);
+    const query = item.query;
+    setTerm(query);
+    setSubmitted(query);
+    setLens(normalizeLens(item.lens));
+    setType('ALL');
+    setStatus('ALL');
+    setSaveOpen(false);
+    setSaveError('');
+    window.history.replaceState({}, '', `/search?q=${encodeURIComponent(query)}`);
   };
 
   const openRecord = (item) => {
@@ -168,11 +245,45 @@ export default function SearchPage({ navigate }) {
       </form>
 
       {submitted && (
+        <div className="eia-search-lenses" role="group" aria-label="Result type lens">
+          {LENSES.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={`eia-lens-chip ${lens === option.id ? 'active' : ''}`}
+              aria-pressed={lens === option.id}
+              onClick={() => chooseLens(option.id)}
+            >
+              <span>{option.label}</span>
+              <b aria-hidden="true">{lensCounts[option.id] || 0}</b>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {submitted && (
         <div className="eia-search-page-meta">
           <span><b>{all.length}</b> records for “{submitted}”</span>
+          <span className="eia-search-active-lens">Lens: <b>{activeLens.label}</b></span>
           {failed.length > 0 && <span className="eia-pill amber">{failed.length} source{failed.length === 1 ? '' : 's'} unavailable</span>}
-          <button type="button" className="eia-btn-secondary" onClick={save}>Save search</button>
+          <button type="button" className="eia-btn-secondary" onClick={startSave}>Save search</button>
         </div>
+      )}
+
+      {submitted && saveOpen && (
+        <form className="eia-save-search-form" onSubmit={submitSave} aria-label="Save this search">
+          <label htmlFor="eia-save-search-name">Name</label>
+          <input
+            id="eia-save-search-name"
+            value={saveName}
+            onChange={(event) => { setSaveName(event.target.value); if (saveError) setSaveError(''); }}
+            placeholder="e.g. Acme open claims"
+            autoFocus
+          />
+          <button type="submit">Save</button>
+          <button type="button" className="eia-btn-secondary" onClick={cancelSave}>Cancel</button>
+          {saveError && <span role="alert">{saveError}</span>}
+        </form>
       )}
 
       <div className="eia-search-page-layout">
@@ -181,7 +292,7 @@ export default function SearchPage({ navigate }) {
           <button type="button" className={type === 'ALL' ? 'active' : ''} onClick={() => setType('ALL')}>
             <span>All records</span><b>{all.length}</b>
           </button>
-          {groups.map((group) => (
+          {lensGroups.map((group) => (
             <button key={group.path} type="button" className={type === group.label ? 'active' : ''} onClick={() => setType(group.label)}>
               <span>{group.label}</span><b>{counts[group.label] || 0}</b>
             </button>
@@ -207,21 +318,6 @@ export default function SearchPage({ navigate }) {
               </button>
             ))}
           </div>
-
-          {saved.length > 0 && (
-            <>
-              <div className="eia-search-facet-title">Saved searches</div>
-              {saved.map((item) => (
-                <div key={`${item.q}-${item.type}-${item.status}`} className="eia-saved-search">
-                  <button type="button" onClick={() => openSaved(item)}>
-                    <span>{item.q}</span>
-                    <small>{item.type === 'ALL' ? 'All types' : item.type}{item.status !== 'ALL' ? ` · ${item.status}` : ''}</small>
-                  </button>
-                  <button type="button" className="remove" aria-label={`Remove saved search ${item.q}`} onClick={() => removeSaved(item)}>×</button>
-                </div>
-              ))}
-            </>
-          )}
         </aside>
 
         <section className="eia-search-results-panel">
@@ -229,6 +325,33 @@ export default function SearchPage({ navigate }) {
             <div className="eia-search-landing">
               <h2>Start with a number or a name</h2>
               <p>Search across claims, policies, parties, contracts, cessions, retrocessions, documents, payments, and notifications. Results respect the direct/assumed book wall.</p>
+
+              {saved.length > 0 && (
+                <section className="eia-saved-searches" aria-label="Saved searches">
+                  <div className="eia-recent-head">
+                    <h3>Saved searches</h3>
+                    <span className="eia-saved-search-count">{saved.length} of {SAVED_SEARCHES_LIMIT}</span>
+                  </div>
+                  <div className="eia-saved-search-list">
+                    {saved.map((item) => (
+                      <div className="eia-saved-search-row" key={item.id}>
+                        <button type="button" className="eia-saved-search-apply" onClick={() => openSaved(item)}>
+                          <span className="eia-saved-search-name">{item.name}</span>
+                          <small>{item.query} · {lensLabel(item.lens)}</small>
+                        </button>
+                        <button
+                          type="button"
+                          className="remove"
+                          aria-label={`Delete saved search ${item.name}`}
+                          onClick={() => removeSaved(item)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <section className="eia-recent-records" aria-label="Recent records">
                 <div className="eia-recent-head">
@@ -274,7 +397,14 @@ export default function SearchPage({ navigate }) {
           {submitted && !loading && visible.length === 0 && (
             <div className="eia-search-empty">
               <strong>No matching records.</strong>
-              <span>Try a shorter number, a different spelling, or create the record you need.</span>
+              <span>
+                {lens !== 'ALL'
+                  ? `No records match the ${activeLens.label} lens for “${submitted}”. Choose another lens or widen the search.`
+                  : 'Try a shorter number, a different spelling, or create the record you need.'}
+              </span>
+              {lens !== 'ALL' && (
+                <button type="button" className="eia-btn-secondary" onClick={() => chooseLens('ALL')}>Show all results</button>
+              )}
               <div className="eia-search-create-grid">
                 {CREATE_ACTIONS.slice(0, 3).map((action) => (
                   <button key={action.path} type="button" className="eia-search-create" onClick={() => navigate(`${action.path}?new=1`)}>
@@ -308,5 +438,3 @@ export default function SearchPage({ navigate }) {
     </div>
   );
 }
-
-

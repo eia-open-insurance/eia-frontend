@@ -319,8 +319,21 @@ test('dedicated search page filters enough context and saves the search', async 
   await expect(page.getByRole('button', { name: /PTY-000000001/ })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('1 records for')).toBeVisible();
   await page.getByRole('button', { name: 'Save search' }).click();
-  await expect(page.getByText('Saved searches')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Acme/ }).last()).toBeVisible();
+  await page.getByLabel('Name', { exact: true }).fill('Acme party search');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save search' })).toBeVisible();
+
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('eia.saved.searches.v1')));
+  expect(stored).toHaveLength(1);
+  expect(stored[0]).toMatchObject({ name: 'Acme party search', query: 'Acme', lens: 'ALL' });
+  expect(typeof stored[0].id).toBe('string');
+  expect(stored[0].ts).toBeGreaterThan(0);
+
+  // Saved searches are listed only on the empty-query landing view.
+  await page.goto('/search');
+  const savedSection = page.getByRole('region', { name: 'Saved searches' });
+  await expect(savedSection).toBeVisible();
+  await expect(savedSection.getByRole('button', { name: /^Acme party search / })).toBeVisible();
 });
 
 test('search page exposes create actions', async ({ page }) => {

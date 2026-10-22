@@ -574,6 +574,50 @@ test('logout clears recent records from localStorage', async ({ page }) => {
   expect(await page.evaluate(() => window.localStorage.getItem('eia.recent.records.v1'))).toBeNull();
 });
 
+test('logout keeps saved searches while it clears recent records', async ({ page }) => {
+  await enableAuth(page);
+  await mockApi(page);
+  await mockTokenEndpoint(page);
+
+  await page.goto('/');
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  // Seed after the page has loaded so the logout reload cannot re-seed them.
+  await page.evaluate(() => {
+    window.localStorage.setItem('eia.recent.records.v1', JSON.stringify([{
+      id: 'party-1',
+      type: 'PARTY',
+      label: 'PTY-000000001',
+      href: '/party?record=party-1',
+      ts: Date.now()
+    }]));
+    window.localStorage.setItem('eia.saved.searches.v1', JSON.stringify([{
+      id: 'saved-1',
+      name: 'Across logout',
+      query: 'Acme',
+      lens: 'POLICIES',
+      ts: Date.now()
+    }]));
+  });
+
+  await page.getByRole('button', { name: 'Logout' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in to EIA Open Insurance' })).toBeVisible();
+
+  // Recent records are session history; saved searches are user preferences.
+  expect(await page.evaluate(() => window.localStorage.getItem('eia.recent.records.v1'))).toBeNull();
+  const saved = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem('eia.saved.searches.v1') || 'null')
+  );
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({
+    id: 'saved-1',
+    name: 'Across logout',
+    query: 'Acme',
+    lens: 'POLICIES'
+  });
+});
+
 test('a failed refresh clears the session and reloads to sign-in once', async ({ page }) => {
   await enableAuth(page);
   const api = await mockApi(page, { status: 401, body: { error: 'invalid_token' } });

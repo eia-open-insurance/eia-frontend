@@ -1,5 +1,78 @@
 export const TENANT = '11111111-1111-7111-8111-111111111111';
-export const SAVED_KEY = 'eia.savedSearches';
+
+/**
+ * Result-type lenses. A lens is a coarse client-side cut across the ten
+ * verticals: Claims combines direct and assumed claims, while the remaining
+ * lenses map one-to-one to a record vertical. Cessions and retrocessions have
+ * no dedicated lens, so they appear under All.
+ */
+export const LENSES = [
+  { id: 'ALL', label: 'All' },
+  { id: 'CLAIMS', label: 'Claims' },
+  { id: 'POLICIES', label: 'Policies' },
+  { id: 'PARTIES', label: 'Parties' },
+  { id: 'CONTRACTS', label: 'Contracts' },
+  { id: 'PAYMENTS', label: 'Payments' },
+  { id: 'DOCUMENTS', label: 'Documents' },
+  { id: 'NOTIFICATIONS', label: 'Notifications' }
+];
+
+const LENS_BY_TYPE = {
+  DIRECT_CLAIM: 'CLAIMS',
+  ASSUMED_CLAIM: 'CLAIMS',
+  CLAIM: 'CLAIMS',
+  POLICY: 'POLICIES',
+  PARTY: 'PARTIES',
+  CONTRACT: 'CONTRACTS',
+  PAYMENT: 'PAYMENTS',
+  DOCUMENT: 'DOCUMENTS',
+  NOTIFICATION: 'NOTIFICATIONS'
+};
+
+const LENS_BY_VERTICAL = {
+  'direct-claims': 'CLAIMS',
+  'assumed-claims': 'CLAIMS',
+  policy: 'POLICIES',
+  party: 'PARTIES',
+  contract: 'CONTRACTS',
+  payment: 'PAYMENTS',
+  document: 'DOCUMENTS',
+  notifications: 'NOTIFICATIONS'
+};
+
+/** Canonical lens id for a stored or user-supplied value; unknown becomes All. */
+export function normalizeLens(value) {
+  const id = String(value || '').trim().toUpperCase();
+  return LENSES.some((lens) => lens.id === id) ? id : 'ALL';
+}
+
+/** Display label for a lens id. */
+export function lensLabel(value) {
+  const id = normalizeLens(value);
+  return (LENSES.find((lens) => lens.id === id) || LENSES[0]).label;
+}
+
+/**
+ * The lens a result belongs to. Item type is authoritative (an enriched party
+ * claim keeps type DIRECT_CLAIM even when it is merged into the direct-claims
+ * group); the group path is the fallback for verticals that do not echo a
+ * type. Unknown records belong to no lens and remain visible under All.
+ */
+export function lensForItem(item, group) {
+  const type = String((item && item.type) || '').trim().toUpperCase();
+  if (LENS_BY_TYPE[type]) return LENS_BY_TYPE[type];
+  const path = String((group && group.path) || (item && item.verticalPath) || '').trim().toLowerCase();
+  if (LENS_BY_VERTICAL[path]) return LENS_BY_VERTICAL[path];
+  const vertical = String((group && group.label) || (item && item.vertical) || '').trim().toLowerCase();
+  if (vertical.includes('claim')) return 'CLAIMS';
+  if (vertical === 'policies' || vertical === 'policy') return 'POLICIES';
+  if (vertical === 'parties' || vertical === 'party') return 'PARTIES';
+  if (vertical === 'contracts' || vertical === 'contract') return 'CONTRACTS';
+  if (vertical === 'payments' || vertical === 'payment') return 'PAYMENTS';
+  if (vertical === 'documents' || vertical === 'document') return 'DOCUMENTS';
+  if (vertical === 'notifications' || vertical === 'notification') return 'NOTIFICATIONS';
+  return 'ALL';
+}
 
 export const VERTICALS = [
   { path: 'direct-claims', label: 'Direct Claims', endpoint: '/api/v1/claims/search', book: 'DIRECT', noun: 'claim' },
@@ -31,23 +104,6 @@ export function bookHeaders(book) {
   const headers = { 'X-EIA-Tenant': TENANT };
   if (book) headers['X-EIA-Book'] = book;
   return headers;
-}
-
-export function readList(key) {
-  try {
-    const value = JSON.parse(window.localStorage.getItem(key) || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
-
-export function writeList(key, value) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage may be unavailable; search still works.
-  }
 }
 
 export function cleanHref(href) {
