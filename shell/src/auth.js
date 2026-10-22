@@ -10,7 +10,7 @@
 // Token endpoint (same origin when proxied by nginx or the dev server):
 //   POST /auth/oauth2/token
 //   Authorization: Basic base64(eia-shell:shell-secret)
-//   grant_type=password&username=...&password=...&scope=openid profile eia.read eia.write
+//   grant_type=password&username=...&password=...&scope=profile eia.read eia.write
 //   grant_type=refresh_token&refresh_token=...
 //
 // A same-origin /api request that answers 401 is retried once after the stored
@@ -23,7 +23,7 @@ export const REFRESH_TOKEN_KEY = 'refresh_token';
 const TOKEN_PATH = '/auth/oauth2/token';
 const CLIENT_ID = 'eia-shell';
 const CLIENT_SECRET = 'shell-secret';
-const SCOPE = 'openid profile eia.read eia.write';
+const SCOPE = 'profile eia.read eia.write';
 
 const nativeFetch = typeof window !== 'undefined' ? window.fetch.bind(window) : null;
 

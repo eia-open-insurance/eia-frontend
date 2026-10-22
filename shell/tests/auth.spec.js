@@ -11,7 +11,7 @@ function mockJwt(sub = 'adjuster', expiresInSeconds = 3600) {
     iss: 'http://localhost:3000/auth',
     aud: 'eia-shell',
     exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
-    scope: 'openid profile eia.read eia.write'
+    scope: 'profile eia.read eia.write'
   });
   return `${header}.${payload}.signature`;
 }
@@ -113,7 +113,7 @@ async function mockTokenEndpoint(page, options = {}) {
         refresh_token: refreshToken,
         token_type: 'Bearer',
         expires_in: 3600,
-        scope: 'openid profile eia.read eia.write'
+        scope: 'profile eia.read eia.write'
       })
     });
   });
@@ -160,7 +160,7 @@ test('enabled auth requires sign-in and stores the returned tokens', async ({ pa
   expect(body.get('grant_type')).toBe('password');
   expect(body.get('username')).toBe('adjuster');
   expect(body.get('password')).toBe('password');
-  expect(body.get('scope')).toBe('openid profile eia.read eia.write');
+  expect(body.get('scope')).toBe('profile eia.read eia.write');
 });
 
 test('same-origin API requests through fetch and XHR carry the bearer token', async ({ page }) => {
