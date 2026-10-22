@@ -1048,6 +1048,24 @@ main [role="status"] {
 
 /* Premium receivables: dunning and credited balances */
 .eia-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.eia-compose-notice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 11px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.eia-compose-notice:hover { text-decoration: none; }
+.eia-dunning-notice .eia-compose-notice {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--eia-blue) !important;
+}
 .eia-dunning-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .eia-credited-amount {
   display: block;

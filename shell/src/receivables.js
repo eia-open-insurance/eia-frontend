@@ -26,6 +26,12 @@ export const DUNNING_CHANNELS = [
 
 export const DEFAULT_DUNNING_CHANNEL = 'EMAIL';
 
+// Compose-notice handoff. The shell never creates or sends the notification;
+// it only opens the Notifications workbench with a pre-filled draft.
+export const NOTIFICATIONS_ROUTE = 'notifications';
+export const DUNNING_NOTICE_TYPE = 'DUNNING_NOTICE';
+export const DUNNING_NOTICE_TEMPLATE = 'DUNNING_NOTICE';
+
 const DEFAULT_CURRENCY = 'USD';
 
 // Installments in these states no longer represent collectible premium.
@@ -125,6 +131,78 @@ export function canSendDunning(row) {
   return status === 'DUE' || status === 'OVERDUE';
 }
 
+/** A receivable has dunning history once billing recorded a level or a date. */
+export function hasDunning(row) {
+  return Boolean(row) && Boolean(text(firstDefined(row.lastDunningLevel, row.lastDunningAt)));
+}
+
+/** The handoff keeps the channel the dunning used, falling back to EMAIL. */
+export function noticeChannel(row, channel) {
+  const source = row && typeof row === 'object' ? row : {};
+  const value = text(firstDefined(channel, source.lastDunningChannel, DEFAULT_DUNNING_CHANNEL));
+  return (value || DEFAULT_DUNNING_CHANNEL).toUpperCase();
+}
+
+function noticeOutstanding(row) {
+  return formatMoney(firstDefined(row.outstandingAmount, row.amount), row.currency);
+}
+
+function noticePolicyNumber(row) {
+  return text(firstDefined(row.policyNumber, row.policyId)) || 'Policy';
+}
+
+function noticeInstallmentNumber(row) {
+  const number = numeric(row.installmentNumber);
+  return number === null ? '—' : String(Math.trunc(number));
+}
+
+function noticeDueText(row) {
+  const dueDate = text(row.dueDate);
+  return dueDate ? `due ${dueDate}` : 'due date not recorded';
+}
+
+function noticeDaysText(row) {
+  const days = numeric(row.daysPastDue);
+  return days !== null && days > 0
+    ? `${Math.trunc(days)} days past due`
+    : 'not yet past due';
+}
+
+export function dunningNoticeSubject(row) {
+  const source = row && typeof row === 'object' ? row : {};
+  return `Dunning notice — policy ${noticePolicyNumber(source)} installment ${noticeInstallmentNumber(source)} — `
+    + `${noticeOutstanding(source)} outstanding, ${noticeDueText(source)} (${noticeDaysText(source)})`;
+}
+
+export function dunningNoticeBody(row) {
+  const source = row && typeof row === 'object' ? row : {};
+  return `Policy ${noticePolicyNumber(source)}, installment ${noticeInstallmentNumber(source)}: `
+    + `${noticeOutstanding(source)} outstanding, ${noticeDueText(source)}; ${noticeDaysText(source)}. `
+    + 'This opens a draft in Notifications, which owns the recipient, template, channel, and send.';
+}
+
+/**
+ * Opens the Notifications workbench with a pre-filled DUNNING_NOTICE draft.
+ * The recipient is included only when billing supplied the insured party; the
+ * rest of the context survives so Notifications can still start the draft.
+ */
+export function composeNoticeHref(row, options = {}) {
+  const source = row && typeof row === 'object' ? row : {};
+  const pairs = [
+    ['new', '1'],
+    ['notificationType', DUNNING_NOTICE_TYPE],
+    ['channel', noticeChannel(source, options.channel)]
+  ];
+  const recipient = text(source.insuredPartyId);
+  if (recipient) pairs.push(['recipientPartyId', recipient]);
+  pairs.push(['templateCode', DUNNING_NOTICE_TEMPLATE]);
+  pairs.push(['subject', dunningNoticeSubject(source)]);
+  pairs.push(['body', dunningNoticeBody(source)]);
+  return `/${NOTIFICATIONS_ROUTE}?${pairs
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&')}`;
+}
+
 /** The collection queue may be wrapped in a body, a paged result, or a plan. */
 export function receivablesItems(payload) {
   if (Array.isArray(payload)) return payload;
@@ -169,6 +247,16 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     source.insuredName,
     policy.insurerName,
     policy.insurer
+  ));
+  // Billing may name the insured party differently by projection; keep the
+  // handoff recipient stable across those aliases.
+  const insuredPartyId = text(firstDefined(
+    source.insuredPartyId,
+    source.insured_party_id,
+    source.partyId,
+    policy.insuredPartyId,
+    policy.insured_party_id,
+    policy.partyId
   ));
 
   const rawNumber = firstDefined(source.installmentNumber, source.installmentNo, source.number, source.sequence);
@@ -239,6 +327,11 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     lastDunning.at,
     lastDunning.date
   ));
+  const lastDunningChannel = text(firstDefined(
+    source.lastDunningChannel,
+    source.dunningChannel,
+    lastDunning.channel
+  )).toUpperCase();
 
   const open = !CLOSED_STATUSES.has(status);
   const computedDays = daysBetween(dueDate, today);
@@ -257,6 +350,7 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     policyId,
     policyNumber,
     insurerName,
+    insuredPartyId,
     installmentNumber,
     dueDate,
     amount,
@@ -270,7 +364,8 @@ export function normalizeReceivable(row, index = 0, today = todayIso()) {
     overdue,
     daysPastDue,
     lastDunningLevel,
-    lastDunningAt
+    lastDunningAt,
+    lastDunningChannel
   };
 }
 

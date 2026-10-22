@@ -75,6 +75,80 @@ async function mockReceivables(page, payload = receivablesFixture()) {
   }));
 }
 
+function receivablesHandoffFixture() {
+  return {
+    items: [
+      {
+        installmentId: 'installment-1',
+        policyId: 'policy-1',
+        policyNumber: 'POL-2026-0000001',
+        insurerName: 'Acme Insurance',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(-12),
+        amount: '12500.0000',
+        outstandingAmount: '10000.0000',
+        currency: 'USD',
+        status: 'DUE',
+        insuredPartyId: 'party-insured-1',
+        lastDunningLevel: 'FIRST_NOTICE',
+        lastDunningChannel: 'LETTER',
+        lastDunningAt: `${localIsoOffset(-6)}T14:20:00Z`
+      },
+      {
+        installmentId: 'installment-2',
+        policyId: 'policy-2',
+        policyNumber: 'POL-2026-0000002',
+        insurerName: 'Northwind Mutual',
+        installmentNumber: 2,
+        dueDate: localIsoOffset(9),
+        amount: '8400.0000',
+        currency: 'USD',
+        status: 'DUE',
+        insured_party_id: 'party-insured-2',
+        lastDunningLevel: 'REMINDER',
+        lastDunningAt: `${localIsoOffset(-2)}T10:00:00Z`
+      },
+      {
+        installmentId: 'installment-3',
+        policyId: 'policy-3',
+        policyNumber: 'POL-2026-0000003',
+        insurerName: 'Sentinel Specialty',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(30),
+        amount: '3000.0000',
+        currency: 'USD',
+        status: 'OVERDUE',
+        lastDunningAt: `${localIsoOffset(-1)}T09:00:00Z`
+      },
+      {
+        installmentId: 'installment-4',
+        policyId: 'policy-4',
+        policyNumber: 'POL-2026-0000004',
+        insurerName: 'Beacon Mutual',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(20),
+        amount: '1500.0000',
+        currency: 'USD',
+        status: 'DUE'
+      },
+      {
+        installmentId: 'installment-5',
+        policyId: 'policy-5',
+        policyNumber: 'POL-2026-0000005',
+        insurerName: 'Harbor Point',
+        installmentNumber: 2,
+        dueDate: localIsoOffset(-3),
+        amount: '2100.0000',
+        currency: 'USD',
+        status: 'DUE',
+        partyId: 'party-insured-5',
+        lastDunningLevel: 'SECOND_NOTICE',
+        lastDunningAt: `${localIsoOffset(-1)}T12:00:00Z`
+      }
+    ]
+  };
+}
+
 async function mockDunningReceivables(page, options = {}) {
   const payload = options.payload || receivablesFixture();
   const state = { getCount: 0, posted: null };
@@ -753,4 +827,165 @@ test('dunning service errors stay in the modal and do not refresh the queue', as
   await expect(dialog.getByRole('alert')).toContainText('Billing service is unavailable.');
   expect(state.getCount).toBe(1);
   await expect(table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('cell').nth(6)).toContainText('First notice');
+});
+
+test('compose notice hands a dunned receivable to Notifications with encoded parameters', async ({ page }) => {
+  await mockReceivables(page, receivablesHandoffFixture());
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  const link = table
+    .getByRole('row', { name: /POL-2026-0000001/ })
+    .getByRole('link', { name: 'Compose notice' });
+  await expect(link).toBeVisible();
+  await expect(
+    page.getByText(/Notifications owns the recipient, template, channel, and send/)
+  ).toBeVisible();
+
+  // A same-tab handoff: no target blank and a shell route with the draft.
+  expect(await link.getAttribute('target')).toBeNull();
+  const href = await link.getAttribute('href');
+  expect(href.startsWith('/notifications?')).toBe(true);
+
+  const url = new URL(href, 'http://localhost:3000');
+  expect(url.searchParams.get('new')).toBe('1');
+  expect(url.searchParams.get('notificationType')).toBe('DUNNING_NOTICE');
+  expect(url.searchParams.get('channel')).toBe('LETTER');
+  expect(url.searchParams.get('recipientPartyId')).toBe('party-insured-1');
+  expect(url.searchParams.get('templateCode')).toBe('DUNNING_NOTICE');
+
+  const subject = url.searchParams.get('subject');
+  expect(subject).toContain('POL-2026-0000001');
+  expect(subject).toContain('installment 1');
+  expect(subject).toContain('$10,000.00');
+  expect(subject).toContain('outstanding');
+  expect(subject).toContain(localIsoOffset(-12));
+  expect(subject).toContain('12 days past due');
+
+  const body = url.searchParams.get('body');
+  expect(body).toContain('POL-2026-0000001');
+  expect(body).toContain('installment 1');
+  expect(body).toContain('$10,000.00');
+  expect(body).toContain('outstanding');
+  expect(body).toContain(localIsoOffset(-12));
+  expect(body).toContain('12 days past due');
+  expect(body).toContain('which owns the recipient, template, channel, and send');
+
+  // The href is encoded, not raw text with spaces or an unescaped ampersand.
+  expect(href).not.toContain(' ');
+  expect(href).toContain(`subject=${encodeURIComponent(subject)}`);
+  expect(href).toContain(`body=${encodeURIComponent(body)}`);
+
+  await link.click();
+  await expect(page).toHaveURL(/\/notifications\?new=1&notificationType=DUNNING_NOTICE/);
+  const opened = new URL(page.url());
+  expect(opened.searchParams.get('channel')).toBe('LETTER');
+  expect(opened.searchParams.get('recipientPartyId')).toBe('party-insured-1');
+  expect(opened.searchParams.get('templateCode')).toBe('DUNNING_NOTICE');
+});
+
+test('compose notice omits a missing recipient and stays off non-dunning rows', async ({ page }) => {
+  await mockReceivables(page, receivablesHandoffFixture());
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await expect(table.getByRole('link', { name: 'Compose notice' })).toHaveCount(4);
+
+  const withoutRecipient = table
+    .getByRole('row', { name: /POL-2026-0000003/ })
+    .getByRole('link', { name: 'Compose notice' });
+  const noRecipientUrl = new URL(await withoutRecipient.getAttribute('href'), 'http://localhost:3000');
+  expect(noRecipientUrl.searchParams.has('recipientPartyId')).toBe(false);
+  expect(noRecipientUrl.searchParams.get('channel')).toBe('EMAIL');
+  for (const key of ['new', 'notificationType', 'channel', 'templateCode', 'subject', 'body']) {
+    expect(noRecipientUrl.searchParams.get(key)).toBeTruthy();
+  }
+
+  // Both billing aliases resolve to the insured party used for the recipient.
+  const snakeCaseRecipient = new URL(
+    await table
+      .getByRole('row', { name: /POL-2026-0000002/ })
+      .getByRole('link', { name: 'Compose notice' })
+      .getAttribute('href'),
+    'http://localhost:3000'
+  );
+  expect(snakeCaseRecipient.searchParams.get('recipientPartyId')).toBe('party-insured-2');
+  expect(snakeCaseRecipient.searchParams.get('channel')).toBe('EMAIL');
+
+  const partyAliasRecipient = new URL(
+    await table
+      .getByRole('row', { name: /POL-2026-0000005/ })
+      .getByRole('link', { name: 'Compose notice' })
+      .getAttribute('href'),
+    'http://localhost:3000'
+  );
+  expect(partyAliasRecipient.searchParams.get('recipientPartyId')).toBe('party-insured-5');
+
+  const nonDunning = table.getByRole('row', { name: /POL-2026-0000004/ });
+  await expect(nonDunning.getByRole('link', { name: 'Compose notice' })).toHaveCount(0);
+  await expect(nonDunning.getByRole('button', { name: 'Send dunning' })).toHaveCount(1);
+});
+
+test('a successful dunning action offers Compose notice for the recorded channel', async ({ page }) => {
+  const payload = {
+    items: [
+      {
+        installmentId: 'installment-1',
+        policyId: 'policy-1',
+        policyNumber: 'POL-2026-0000001',
+        insurerName: 'Acme Insurance',
+        installmentNumber: 1,
+        dueDate: localIsoOffset(-12),
+        amount: '12500.0000',
+        outstandingAmount: '10000.0000',
+        currency: 'USD',
+        status: 'DUE',
+        insuredPartyId: 'party-insured-1'
+      }
+    ]
+  };
+  const state = await mockDunningReceivables(page, {
+    payload,
+    onPost: (request, current) => {
+      current.items[0].lastDunningLevel = 'SECOND_NOTICE';
+      current.items[0].lastDunningAt = `${localIsoOffset(0)}T16:45:00Z`;
+      return { status: 201, body: { id: 'dunning-1', level: 'SECOND_NOTICE', channel: 'LETTER' } };
+    }
+  });
+  const notificationPosts = [];
+  await page.route('**/api/v1/notifications**', (route) => {
+    if (route.request().method() === 'POST') notificationPosts.push(route.request());
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+
+  await page.goto('/receivables');
+  const table = page.getByRole('table', { name: 'Premium receivables installments' });
+  await table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('button', { name: 'Send dunning' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Send dunning' });
+  await dialog.getByLabel('Level').selectOption('SECOND_NOTICE');
+  await dialog.getByLabel('Channel').selectOption('LETTER');
+  await dialog.getByRole('button', { name: 'Send dunning' }).click();
+
+  await expect(dialog).toHaveCount(0);
+  expect(state.posted).not.toBeNull();
+  const compose = page.getByTestId('dunning-compose-notice');
+  await expect(compose).toBeVisible();
+  await expect(compose).toHaveText('Compose notice');
+
+  const url = new URL(await compose.getAttribute('href'), 'http://localhost:3000');
+  expect(url.pathname).toBe('/notifications');
+  expect(url.searchParams.get('new')).toBe('1');
+  expect(url.searchParams.get('notificationType')).toBe('DUNNING_NOTICE');
+  expect(url.searchParams.get('channel')).toBe('LETTER');
+  expect(url.searchParams.get('recipientPartyId')).toBe('party-insured-1');
+  expect(url.searchParams.get('templateCode')).toBe('DUNNING_NOTICE');
+  expect(url.searchParams.get('subject')).toContain('POL-2026-0000001');
+  expect(url.searchParams.get('body')).toContain('$10,000.00');
+
+  // The handoff is only a link; it did not create or send a notification.
+  expect(notificationPosts).toHaveLength(0);
+
+  // The refreshed row also carries the new dunning history and offers the link.
+  await expect(
+    table.getByRole('row', { name: /POL-2026-0000001/ }).getByRole('link', { name: 'Compose notice' })
+  ).toBeVisible();
 });

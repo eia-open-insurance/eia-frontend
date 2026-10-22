@@ -7,11 +7,13 @@ import {
   RECEIVABLES_ENDPOINT,
   TENANT,
   canSendDunning,
+  composeNoticeHref,
   defaultDunningLevel,
   dunningChannelLabel,
   dunningEndpoint,
   dunningLevelLabel,
   formatMoney,
+  hasDunning,
   receivableMatches,
   statusTone,
   summarizeReceivables
@@ -51,6 +53,7 @@ export default function ReceivablesPage({ navigate }) {
   const [tab, setTab] = useState('ALL');
   const [term, setTerm] = useState('');
   const [notice, setNotice] = useState('');
+  const [composeOffer, setComposeOffer] = useState(null);
   const [dunningRow, setDunningRow] = useState(null);
   const [dunningLevel, setDunningLevel] = useState('REMINDER');
   const [dunningChannel, setDunningChannel] = useState(DEFAULT_DUNNING_CHANNEL);
@@ -115,6 +118,10 @@ export default function ReceivablesPage({ navigate }) {
     navigate(`policy?record=${encodeURIComponent(target)}`);
   };
 
+  const openComposeNotice = (row, channel) => {
+    navigate(composeNoticeHref(row, { channel }));
+  };
+
   const clearFilters = () => {
     setTerm('');
     setTab('ALL');
@@ -122,6 +129,7 @@ export default function ReceivablesPage({ navigate }) {
 
   const openDunning = (row) => {
     setNotice('');
+    setComposeOffer(null);
     setDunningError('');
     setDunningRow(row);
     setDunningLevel(defaultDunningLevel(row));
@@ -165,6 +173,7 @@ export default function ReceivablesPage({ navigate }) {
         return;
       }
       setNotice(`${dunningLevelLabel(dunningLevel)} for ${row.policyNumber} installment ${row.installmentNumber} via ${dunningChannelLabel(dunningChannel)}.`);
+      setComposeOffer({ row, channel: dunningChannel });
       setDunningRow(null);
       setDunningNotes('');
       setReloadKey((value) => value + 1);
@@ -197,7 +206,30 @@ export default function ReceivablesPage({ navigate }) {
         <div className="eia-dunning-notice" role="status">
           <strong>Dunning recorded.</strong>
           <span>{notice}</span>
-          <button type="button" className="eia-btn-ghost" onClick={() => setNotice('')}>Dismiss</button>
+          {composeOffer && (
+            <a
+              className="eia-btn-secondary eia-compose-notice"
+              href={composeNoticeHref(composeOffer.row, { channel: composeOffer.channel })}
+              data-testid="dunning-compose-notice"
+              title="Open a pre-filled DUNNING_NOTICE draft in Notifications. Notifications owns the send; nothing is created or sent here."
+              onClick={(event) => {
+                event.preventDefault();
+                openComposeNotice(composeOffer.row, composeOffer.channel);
+              }}
+            >
+              Compose notice
+            </a>
+          )}
+          <button
+            type="button"
+            className="eia-btn-ghost"
+            onClick={() => {
+              setNotice('');
+              setComposeOffer(null);
+            }}
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -356,6 +388,20 @@ export default function ReceivablesPage({ navigate }) {
                             {canSendDunning(row) && (
                               <button type="button" className="eia-btn-secondary" onClick={() => openDunning(row)}>Send dunning</button>
                             )}
+                            {hasDunning(row) && (
+                              <a
+                                className="eia-btn-secondary eia-compose-notice"
+                                href={composeNoticeHref(row)}
+                                data-testid={`receivable-compose-${row.id}`}
+                                title="Open a pre-filled DUNNING_NOTICE draft in Notifications. Notifications owns the send; nothing is created or sent here."
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  openComposeNotice(row, row.lastDunningChannel);
+                                }}
+                              >
+                                Compose notice
+                              </a>
+                            )}
                             <button type="button" className="eia-btn-secondary" onClick={() => openPolicy(row)}>Open policy</button>
                           </div>
                         </td>
@@ -462,7 +508,9 @@ export default function ReceivablesPage({ navigate }) {
           calculated from the loaded installment rows. Filters match policy number, insurer, amount, currency, status, and due
           date, and only open installments are listed. Sending dunning records a collection communication against one
           installment; it does not change the installment status, amount, or payment. A duplicate level for the same installment
-          is rejected as a conflict.
+          is rejected as a conflict. After dunning succeeds, or on any installment with dunning history, Compose notice hands the
+          collections context to Notifications in the same tab as a pre-filled DUNNING_NOTICE draft. Notifications owns the
+          recipient, template, channel, and send; this queue never creates or sends the notification automatically.
         </p>
       </div>
     </div>
