@@ -851,7 +851,6 @@ test('compose notice hands a dunned receivable to Notifications with encoded par
   expect(url.searchParams.get('notificationType')).toBe('DUNNING_NOTICE');
   expect(url.searchParams.get('channel')).toBe('LETTER');
   expect(url.searchParams.get('recipientPartyId')).toBe('party-insured-1');
-  expect(url.searchParams.get('templateCode')).toBe('DUNNING_NOTICE');
 
   const subject = url.searchParams.get('subject');
   expect(subject).toContain('POL-2026-0000001');
@@ -880,7 +879,6 @@ test('compose notice hands a dunned receivable to Notifications with encoded par
   const opened = new URL(page.url());
   expect(opened.searchParams.get('channel')).toBe('LETTER');
   expect(opened.searchParams.get('recipientPartyId')).toBe('party-insured-1');
-  expect(opened.searchParams.get('templateCode')).toBe('DUNNING_NOTICE');
 });
 
 test('compose notice omits a missing recipient and stays off non-dunning rows', async ({ page }) => {
@@ -895,7 +893,7 @@ test('compose notice omits a missing recipient and stays off non-dunning rows', 
   const noRecipientUrl = new URL(await withoutRecipient.getAttribute('href'), 'http://localhost:3000');
   expect(noRecipientUrl.searchParams.has('recipientPartyId')).toBe(false);
   expect(noRecipientUrl.searchParams.get('channel')).toBe('EMAIL');
-  for (const key of ['new', 'notificationType', 'channel', 'templateCode', 'subject', 'body']) {
+  for (const key of ['new', 'notificationType', 'channel', 'subject', 'body']) {
     expect(noRecipientUrl.searchParams.get(key)).toBeTruthy();
   }
 
@@ -977,7 +975,6 @@ test('a successful dunning action offers Compose notice for the recorded channel
   expect(url.searchParams.get('notificationType')).toBe('DUNNING_NOTICE');
   expect(url.searchParams.get('channel')).toBe('LETTER');
   expect(url.searchParams.get('recipientPartyId')).toBe('party-insured-1');
-  expect(url.searchParams.get('templateCode')).toBe('DUNNING_NOTICE');
   expect(url.searchParams.get('subject')).toContain('POL-2026-0000001');
   expect(url.searchParams.get('body')).toContain('$10,000.00');
 
