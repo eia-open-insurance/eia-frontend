@@ -63,22 +63,30 @@ enabled config as a static asset.
 When enabled, `AuthGate` renders `LoginPage` until a token is present. `src/auth.js` implements:
 
 - `login(username, password)` posts `grant_type=password` to `/auth/oauth2/token` with
-  `Basic base64(eia-shell:shell-secret)` and stores the response's `access_token` /
-  `refresh_token` in `sessionStorage`.
+  `Basic base64(eia-shell:shell-secret)` and the scope `openid profile eia.read eia.write`,
+  then stores the response's `access_token` / `refresh_token` in `sessionStorage`.
 - `getToken()`, `getRefreshToken()`, `isAuthenticated()`, `getExpiry()` (epoch milliseconds from
   the JWT `exp`) and `getUsername()` (JWT `sub`).
 - `logout()` clears both keys and reloads.
-- A `window.fetch` wrapper adds `Authorization: Bearer` to same-origin `/api` requests and clears
-  the session plus reloads once on a 401.
-- An `XMLHttpRequest` wrapper adds the same header to `/api` calls when the caller does not set
-  `Authorization` itself.
+- `refreshAccessToken()` posts `grant_type=refresh_token` with the stored refresh token and the
+  same Basic client authentication, then stores the new access/refresh tokens. Concurrent callers
+  share one in-flight refresh (single-flight), so a burst of 401s sends one token request.
+- A `window.fetch` wrapper adds `Authorization: Bearer` to same-origin `/api` requests. On a 401
+  it refreshes (unless another request already refreshed the token), retries the request once with
+  the new bearer, and clears the session plus reloads to login if the refresh or the retry fails.
+  A request/response pair is retried at most once, so a persistent 401 cannot loop.
+- An `XMLHttpRequest` wrapper adds the same header to `/api` calls, including uploads, when the
+  caller does not set `Authorization` itself. XHR bodies are not replayed: a 401 clears the session
+  and reloads to login without a retry.
 
 The local demo user is `adjuster` / `password`; the login card shows that hint. The password grant
 and bundled `eia-shell` secret are for the local/demo stack only. A production identity integration
 should use authorization-code + PKCE instead.
 
-`npx playwright test tests/auth.spec.js` covers the enabled login/logout flow, bearer injection for
-fetch and XHR, the `invalid_grant` error, 401 handling, and the disabled default.
+`npx playwright test tests/auth.spec.js` covers the enabled login/logout flow (including the write
+scope), bearer injection for fetch and XHR, the `invalid_grant` error, 401 refresh-and-retry with
+the new bearer, single-flight refresh for concurrent 401s, refresh failure and retry exhaustion
+clearing the session, the XHR upload 401 path, and the disabled default.
 
 ## Operations dashboard
 

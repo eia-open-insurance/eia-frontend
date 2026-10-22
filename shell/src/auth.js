@@ -10,7 +10,12 @@
 // Token endpoint (same origin when proxied by nginx or the dev server):
 //   POST /auth/oauth2/token
 //   Authorization: Basic base64(eia-shell:shell-secret)
-//   grant_type=password&username=...&password=...&scope=openid profile eia.read
+//   grant_type=password&username=...&password=...&scope=openid profile eia.read eia.write
+//   grant_type=refresh_token&refresh_token=...
+//
+// A same-origin /api request that answers 401 is retried once after the stored
+// refresh token is exchanged for a new access token. Concurrent 401s share one
+// refresh round-trip; a failed refresh clears the session and reloads to login.
 
 export const ACCESS_TOKEN_KEY = 'access_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';
@@ -18,12 +23,13 @@ export const REFRESH_TOKEN_KEY = 'refresh_token';
 const TOKEN_PATH = '/auth/oauth2/token';
 const CLIENT_ID = 'eia-shell';
 const CLIENT_SECRET = 'shell-secret';
-const SCOPE = 'openid profile eia.read';
+const SCOPE = 'openid profile eia.read eia.write';
 
 const nativeFetch = typeof window !== 'undefined' ? window.fetch.bind(window) : null;
 
 let interceptorsInstalled = false;
 let redirectingToLogin = false;
+let refreshInFlight = null;
 
 /** True only when the runtime config explicitly opts in. */
 export function isAuthEnabled() {
@@ -111,6 +117,44 @@ export function getUsername() {
   return payload.sub || payload.preferred_username || null;
 }
 
+function basicAuthorization() {
+  return `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`;
+}
+
+/**
+ * Post an OAuth2 token request with the shell's client credentials. Resolves
+ * with the token response; rejects with an Error carrying `code` (the OAuth
+ * `error` value, e.g. `invalid_grant`) and `status` when the endpoint refuses.
+ */
+async function requestToken(body) {
+  if (!nativeFetch) {
+    throw new Error('Sign-in is only available in a browser.');
+  }
+
+  const response = await nativeFetch(TOKEN_PATH, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: basicAuthorization()
+    },
+    body
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.access_token) {
+    const error = new Error(
+      payload.error_description ||
+        payload.error ||
+        `The token endpoint returned status ${response.status}.`
+    );
+    error.code = payload.error || 'token_request_failed';
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
 /**
  * Exchange credentials for tokens. Stores the access and refresh tokens in
  * sessionStorage and resolves with the token response.
@@ -119,41 +163,54 @@ export function getUsername() {
  * `invalid_grant`) and `status` when the endpoint refuses the request.
  */
 export async function login(username, password) {
-  if (!nativeFetch) {
-    throw new Error('Sign-in is only available in a browser.');
-  }
-
   const body = new URLSearchParams();
   body.set('grant_type', 'password');
   body.set('username', username);
   body.set('password', password);
   body.set('scope', SCOPE);
 
-  const response = await nativeFetch(TOKEN_PATH, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`
-    },
-    body
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.access_token) {
-    const error = new Error(
-      payload.error_description || payload.error || `Sign-in failed with status ${response.status}.`
-    );
-    error.code = payload.error || 'login_failed';
-    error.status = response.status;
-    throw error;
-  }
-
+  const payload = await requestToken(body);
   storageSet(ACCESS_TOKEN_KEY, payload.access_token);
   if (payload.refresh_token) storageSet(REFRESH_TOKEN_KEY, payload.refresh_token);
   else storageRemove(REFRESH_TOKEN_KEY);
 
   return payload;
+}
+
+/**
+ * Exchange the stored refresh token for a new access token.
+ *
+ * While one refresh is in flight every caller awaits that same promise, so a
+ * burst of 401 responses results in a single token request. Resolves with the
+ * new access token; rejects when no refresh token is stored or the endpoint
+ * refuses the refresh (the caller then clears the session).
+ */
+export function refreshAccessToken() {
+  if (refreshInFlight) return refreshInFlight;
+
+  const perform = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) {
+      const error = new Error('No refresh token is stored.');
+      error.code = 'no_refresh_token';
+      throw error;
+    }
+
+    const body = new URLSearchParams();
+    body.set('grant_type', 'refresh_token');
+    body.set('refresh_token', refreshToken);
+
+    const payload = await requestToken(body);
+    storageSet(ACCESS_TOKEN_KEY, payload.access_token);
+    // A rotating server may omit refresh_token; keep the current one then.
+    if (payload.refresh_token) storageSet(REFRESH_TOKEN_KEY, payload.refresh_token);
+    return payload.access_token;
+  })();
+
+  refreshInFlight = perform.finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 export function clearTokens() {
@@ -188,12 +245,27 @@ function isSameOriginApi(input) {
   return Boolean(url && url.origin === window.location.origin && isApiPath(url.pathname));
 }
 
+function requestHeaders(input, init) {
+  if (init && init.headers) return new Headers(init.headers);
+  if (typeof Request !== 'undefined' && input instanceof Request) return new Headers(input.headers);
+  return new Headers();
+}
+
+function cloneRequest(input) {
+  if (typeof Request === 'undefined' || !(input instanceof Request)) return input;
+  try {
+    return input.clone();
+  } catch {
+    return null;
+  }
+}
+
 function handleUnauthorized() {
-  const hadToken = Boolean(getToken());
+  const hadSession = Boolean(getToken() || getRefreshToken());
   clearTokens();
   // Reload once so the gate renders the login page. After the reload no token
   // is present, so a further 401 cannot trigger another loop.
-  if (hadToken && !redirectingToLogin) {
+  if (hadSession && !redirectingToLogin) {
     redirectingToLogin = true;
     window.location.reload();
   }
@@ -205,21 +277,61 @@ function installFetchInterceptor() {
   window.fetch = async function eiaFetch(input, init) {
     const apiRequest = isSameOriginApi(input);
     let nextInit = init;
+    let sentToken = null;
+    let replay = input;
 
     if (apiRequest) {
       const token = getToken();
-      if (token) {
-        const headers = new Headers(
-          init && init.headers ? init.headers : input instanceof Request ? input.headers : undefined
-        );
-        if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
-        nextInit = { ...(init || {}), headers };
+      const headers = requestHeaders(input, init);
+      if (token && !headers.has('Authorization')) {
+        headers.set('Authorization', `Bearer ${token}`);
+        sentToken = token;
       }
+      nextInit = { ...(init || {}), headers };
+      // A Request body can only be consumed once; clone it before the first
+      // send so a 401 can still be replayed.
+      replay = cloneRequest(input);
     }
 
     const response = await nativeFetch(input, nextInit);
-    if (response.status === 401 && apiRequest) handleUnauthorized();
-    return response;
+    if (!apiRequest || response.status !== 401) return response;
+
+    // Without a replayable request, fail closed instead of retrying a broken
+    // (already consumed) body.
+    if (replay === null) {
+      handleUnauthorized();
+      return response;
+    }
+
+    const currentToken = getToken();
+    // A concurrent request may have refreshed while this response was in
+    // flight; replay with the newer token rather than refreshing again.
+    const alreadyRefreshed = Boolean(sentToken && currentToken && currentToken !== sentToken);
+    if (!alreadyRefreshed) {
+      if (!getRefreshToken()) {
+        handleUnauthorized();
+        return response;
+      }
+      try {
+        await refreshAccessToken();
+      } catch {
+        handleUnauthorized();
+        return response;
+      }
+    }
+
+    const retryToken = getToken();
+    if (!retryToken) {
+      handleUnauthorized();
+      return response;
+    }
+
+    const retryHeaders = requestHeaders(replay, nextInit);
+    retryHeaders.set('Authorization', `Bearer ${retryToken}`);
+    const retried = await nativeFetch(replay, { ...(nextInit || {}), headers: retryHeaders });
+    // Exactly one retry: a second 401 clears the session instead of looping.
+    if (retried.status === 401) handleUnauthorized();
+    return retried;
   };
 }
 
@@ -233,6 +345,7 @@ function installXhrInterceptor() {
     this.__eiaRequestUrl = url;
     this.__eiaHasAuthorization = false;
     this.__eiaAuthorizationInjected = false;
+    this.__eiaUnauthorizedHandled = false;
     return nativeOpen.call(this, method, url, ...rest);
   };
 
@@ -261,6 +374,17 @@ function installXhrInterceptor() {
 
   prototype.send = function eiaSend(...args) {
     injectAuthorization(this);
+    if (isTrackedApiRequest(this)) {
+      // XHR bodies (uploads) cannot be replayed safely, so a 401 clears the
+      // session and returns to login instead of refreshing and retrying.
+      this.addEventListener('readystatechange', function eiaXhrUnauthorized() {
+        if (this.readyState !== 4 || this.__eiaUnauthorizedHandled) return;
+        if (this.status === 401) {
+          this.__eiaUnauthorizedHandled = true;
+          handleUnauthorized();
+        }
+      });
+    }
     return nativeSend.apply(this, args);
   };
 }

@@ -11,7 +11,7 @@ function mockJwt(sub = 'adjuster', expiresInSeconds = 3600) {
     iss: 'http://localhost:3000/auth',
     aud: 'eia-shell',
     exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
-    scope: 'openid profile eia.read'
+    scope: 'openid profile eia.read eia.write'
   });
   return `${header}.${payload}.signature`;
 }
@@ -41,11 +41,24 @@ async function mockApi(page, options = {}) {
   const state = { requests: [] };
   await page.route('**/api/**', async (route) => {
     const request = route.request();
-    state.requests.push({
+    const entry = {
       url: request.url(),
       method: request.method(),
       authorization: request.headers()['authorization'] || null
-    });
+    };
+    state.requests.push(entry);
+
+    if (typeof options.handler === 'function') {
+      const result = await options.handler(request, entry);
+      if (result) {
+        await route.fulfill({
+          status: result.status,
+          contentType: 'application/json',
+          body: JSON.stringify(result.body === undefined ? {} : result.body)
+        });
+        return;
+      }
+    }
     if (options.status) {
       await route.fulfill({
         status: options.status,
@@ -59,27 +72,48 @@ async function mockApi(page, options = {}) {
   return state;
 }
 
+function isRefreshRequest(request) {
+  return new URLSearchParams(request.postData() || '').get('grant_type') === 'refresh_token';
+}
+
 async function mockTokenEndpoint(page, options = {}) {
-  const state = { request: null, token: options.token || mockJwt() };
+  const state = { requests: [], request: null, token: options.token || mockJwt() };
   await page.route('**/auth/oauth2/token', async (route) => {
-    state.request = route.request();
-    if (options.status) {
+    const request = route.request();
+    state.request = request;
+    state.requests.push(request);
+    const refresh = isRefreshRequest(request);
+    const failureStatus = refresh ? options.refreshStatus : options.status;
+
+    if (failureStatus) {
       await route.fulfill({
-        status: options.status,
+        status: failureStatus,
         contentType: 'application/json',
-        body: JSON.stringify(options.body || { error: 'invalid_grant' })
+        body: JSON.stringify(
+          (refresh ? options.refreshBody : options.body) || { error: 'invalid_grant' }
+        )
       });
       return;
     }
+
+    const accessToken = refresh ? options.refreshedToken || mockJwt('adjuster') : state.token;
+    const refreshToken = refresh
+      ? options.refreshedRefreshToken === undefined
+        ? 'refresh-token-2'
+        : options.refreshedRefreshToken
+      : options.refreshToken === undefined
+        ? 'refresh-token'
+        : options.refreshToken;
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        access_token: state.token,
-        refresh_token: options.refreshToken === undefined ? 'refresh-token' : options.refreshToken,
+        access_token: accessToken,
+        refresh_token: refreshToken,
         token_type: 'Bearer',
         expires_in: 3600,
-        scope: 'openid profile eia.read'
+        scope: 'openid profile eia.read eia.write'
       })
     });
   });
@@ -126,7 +160,7 @@ test('enabled auth requires sign-in and stores the returned tokens', async ({ pa
   expect(body.get('grant_type')).toBe('password');
   expect(body.get('username')).toBe('adjuster');
   expect(body.get('password')).toBe('password');
-  expect(body.get('scope')).toBe('openid profile eia.read');
+  expect(body.get('scope')).toBe('openid profile eia.read eia.write');
 });
 
 test('same-origin API requests through fetch and XHR carry the bearer token', async ({ page }) => {
@@ -160,6 +194,154 @@ test('same-origin API requests through fetch and XHR carry the bearer token', as
   expect(xhrRequest.authorization).toBe(expected);
   // Every API call made after the gate opened carries the token.
   expect(api.requests.every((request) => request.authorization === expected)).toBe(true);
+});
+
+test('a 401 refreshes the token and retries the request with the new bearer', async ({ page }) => {
+  await enableAuth(page);
+  const refreshedToken = mockJwt('adjuster', 7200);
+  const api = await mockApi(page, {
+    handler: (request) => {
+      if (!request.url().includes('/api/v1/refresh-check')) return { status: 200, body: [] };
+      return request.headers()['authorization'] === `Bearer ${refreshedToken}`
+        ? { status: 200, body: { refreshed: true } }
+        : { status: 401, body: { error: 'invalid_token' } };
+    }
+  });
+  const endpoint = await mockTokenEndpoint(page, {
+    refreshedToken,
+    refreshedRefreshToken: 'refresh-token-2'
+  });
+
+  await page.goto('/');
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  const result = await page.evaluate(() =>
+    fetch('/api/v1/refresh-check').then(async (response) => ({
+      status: response.status,
+      body: await response.json()
+    }))
+  );
+  expect(result).toEqual({ status: 200, body: { refreshed: true } });
+
+  // The first attempt carried the login token; the retry carried the refreshed one.
+  const attempts = api.requests.filter((request) => request.url.endsWith('/api/v1/refresh-check'));
+  expect(attempts.map((request) => request.authorization)).toEqual([
+    `Bearer ${endpoint.token}`,
+    `Bearer ${refreshedToken}`
+  ]);
+
+  const refreshRequests = endpoint.requests.filter(isRefreshRequest);
+  expect(refreshRequests).toHaveLength(1);
+  expect(refreshRequests[0].method()).toBe('POST');
+  expect(refreshRequests[0].headers()['content-type']).toContain(
+    'application/x-www-form-urlencoded'
+  );
+  expect(refreshRequests[0].headers()['authorization']).toBe(
+    `Basic ${Buffer.from('eia-shell:shell-secret').toString('base64')}`
+  );
+  const refreshBody = new URLSearchParams(refreshRequests[0].postData());
+  expect(refreshBody.get('grant_type')).toBe('refresh_token');
+  expect(refreshBody.get('refresh_token')).toBe('refresh-token');
+
+  expect(
+    await page.evaluate(() => ({
+      access: sessionStorage.getItem('access_token'),
+      refresh: sessionStorage.getItem('refresh_token')
+    }))
+  ).toEqual({ access: refreshedToken, refresh: 'refresh-token-2' });
+});
+
+test('concurrent 401s share one refresh round-trip and both retry', async ({ page }) => {
+  await enableAuth(page);
+  const refreshedToken = mockJwt('adjuster-refreshed', 7200);
+  const concurrentPaths = ['/api/v1/concurrent-a', '/api/v1/concurrent-b'];
+  const api = await mockApi(page, {
+    handler: (request) => {
+      if (!concurrentPaths.some((path) => request.url().endsWith(path))) {
+        return { status: 200, body: [] };
+      }
+      return request.headers()['authorization'] === `Bearer ${refreshedToken}`
+        ? { status: 200, body: [] }
+        : { status: 401, body: { error: 'invalid_token' } };
+    }
+  });
+  const endpoint = await mockTokenEndpoint(page, { refreshedToken });
+
+  await page.goto('/');
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  const statuses = await page.evaluate(() =>
+    Promise.all([
+      fetch('/api/v1/concurrent-a').then((response) => response.status),
+      fetch('/api/v1/concurrent-b').then((response) => response.status)
+    ])
+  );
+  expect(statuses).toEqual([200, 200]);
+
+  // Both 401s were served by a single token refresh, and each request was retried once.
+  expect(endpoint.requests.filter(isRefreshRequest)).toHaveLength(1);
+  for (const path of concurrentPaths) {
+    expect(api.requests.filter((request) => request.url.endsWith(path))).toHaveLength(2);
+  }
+});
+
+test('a retry that receives another 401 clears the session without another refresh', async ({ page }) => {
+  await enableAuth(page);
+  const api = await mockApi(page, {
+    handler: (request) =>
+      request.url().includes('/api/v1/always-unauthorized')
+        ? { status: 401, body: { error: 'invalid_token' } }
+        : { status: 200, body: [] }
+  });
+  const endpoint = await mockTokenEndpoint(page, { refreshedToken: mockJwt('adjuster', 7200) });
+
+  await page.goto('/');
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  await page.evaluate(() => {
+    fetch('/api/v1/always-unauthorized');
+  });
+
+  await expect(page.getByRole('heading', { name: 'Sign in to EIA Open Insurance' })).toBeVisible({
+    timeout: 15000
+  });
+  expect(
+    api.requests.filter((request) => request.url.endsWith('/api/v1/always-unauthorized'))
+  ).toHaveLength(2);
+  expect(endpoint.requests.filter(isRefreshRequest)).toHaveLength(1);
+  expect(await page.evaluate(() => sessionStorage.getItem('access_token'))).toBeNull();
+});
+
+test('an XHR upload 401 attaches the token, clears the session, and is not retried', async ({ page }) => {
+  await enableAuth(page);
+  const api = await mockApi(page, {
+    handler: (request) =>
+      request.url().includes('/api/v1/xhr-upload')
+        ? { status: 401, body: { error: 'invalid_token' } }
+        : { status: 200, body: [] }
+  });
+  const endpoint = await mockTokenEndpoint(page);
+
+  await page.goto('/');
+  await signIn(page);
+  await expect(page.getByRole('heading', { name: 'Claims operations' })).toBeVisible({ timeout: 15000 });
+
+  await page.evaluate(() => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/v1/xhr-upload');
+    xhr.send(new FormData());
+  });
+
+  await expect(page.getByRole('heading', { name: 'Sign in to EIA Open Insurance' })).toBeVisible({
+    timeout: 15000
+  });
+  const uploads = api.requests.filter((request) => request.url.endsWith('/api/v1/xhr-upload'));
+  expect(uploads).toHaveLength(1);
+  expect(uploads[0].authorization).toBe(`Bearer ${endpoint.token}`);
+  expect(await page.evaluate(() => sessionStorage.getItem('access_token'))).toBeNull();
 });
 
 test('invalid credentials surface the invalid_grant error and keep the gate closed', async ({ page }) => {
@@ -207,21 +389,28 @@ test('logout clears the session and returns to the sign-in page', async ({ page 
   ).toEqual({ access: null, refresh: null });
 });
 
-test('a 401 from the API clears the session and reloads to sign-in once', async ({ page }) => {
+test('a failed refresh clears the session and reloads to sign-in once', async ({ page }) => {
   await enableAuth(page);
   const api = await mockApi(page, { status: 401, body: { error: 'invalid_token' } });
-  await mockTokenEndpoint(page);
+  const endpoint = await mockTokenEndpoint(page, {
+    refreshStatus: 400,
+    refreshBody: { error: 'invalid_grant', error_description: 'Refresh token expired' }
+  });
 
   await page.goto('/');
   await signIn(page);
 
-  // The dashboard requests the API after the gate opens; every response is a 401.
+  // The dashboard requests the API after the gate opens; every response is a
+  // 401 and the refresh attempt is refused.
   await expect.poll(() => api.requests.length).toBeGreaterThan(0);
   await expect(page.getByRole('heading', { name: 'Sign in to EIA Open Insurance' })).toBeVisible({
     timeout: 15000
   });
   expect(await page.evaluate(() => sessionStorage.getItem('access_token'))).toBeNull();
-  // The login page makes no API calls, so the reload cannot loop.
+  expect(await page.evaluate(() => sessionStorage.getItem('refresh_token'))).toBeNull();
+  // Concurrent 401s shared a single refresh, and the login page makes no API
+  // calls, so the reload cannot loop.
+  expect(endpoint.requests.filter(isRefreshRequest)).toHaveLength(1);
   const requestCount = api.requests.length;
   await page.waitForTimeout(500);
   expect(api.requests.length).toBe(requestCount);
