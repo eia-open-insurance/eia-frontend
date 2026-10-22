@@ -195,6 +195,7 @@ export function composeNoticeHref(row, options = {}) {
   ];
   const recipient = text(source.insuredPartyId);
   if (recipient) pairs.push(['recipientPartyId', recipient]);
+  pairs.push(['templateCode', DUNNING_NOTICE_TEMPLATE]);
   pairs.push(['subject', dunningNoticeSubject(source)]);
   pairs.push(['body', dunningNoticeBody(source)]);
   return `/${NOTIFICATIONS_ROUTE}?${pairs
